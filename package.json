@@ -21,6 +21,7 @@
 		"react": "18.2.0",
 		"react-native": "0.73.6",
 		"react-native-awesome-slider": "^2.5.1",
+		"react-native-cloud-storage": "^2.2.1",
 		"react-native-fast-image": "^8.6.3",
 		"react-native-gesture-handler": "~2.14.0",
 		"react-native-image-colors": "^2.4.0",
