@@ -81,6 +81,20 @@ const TabsNavigation = () => {
 						),
 					}}
 				/>
+
+				<Tabs.Screen
+					name="manage"
+					options={{
+						title: "Manage",
+						tabBarIcon: ({ color }) => (
+							<MaterialCommunityIcons
+								name="tools"
+								size={28}
+								color={color}
+							/>
+						),
+					}}
+				/>
 			</Tabs>
 
 			<FloatingPlayer
