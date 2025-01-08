@@ -1,33 +1,46 @@
-import { unknownArtistImageUri } from '@/constants/images'
-import { screenPadding } from '@/constants/tokens'
-import { artistNameFilter } from '@/helpers/filter'
-import { useNavigationSearch } from '@/hooks/useNavigationSearch'
-import { useArtists } from '@/store/library'
-import { defaultStyles, utilsStyles } from '@/styles'
-import { Link } from 'expo-router'
-import { useMemo } from 'react'
-import { FlatList, StyleSheet, Text, TouchableHighlight, View } from 'react-native'
-import FastImage from 'react-native-fast-image'
-import { ScrollView } from 'react-native-gesture-handler'
+import { unknownArtistImageUri } from "@/constants/images";
+import { screenPadding } from "@/constants/tokens";
+import { artistNameFilter } from "@/helpers/filter";
+import { useNavigationSearch } from "@/hooks/useNavigationSearch";
+import { useArtists } from "@/store/library";
+import { defaultStyles, utilsStyles } from "@/styles";
+import { Link } from "expo-router";
+import { useMemo } from "react";
+import {
+	FlatList,
+	StyleSheet,
+	Text,
+	TouchableHighlight,
+	View,
+} from "react-native";
+import FastImage from "react-native-fast-image";
+import { ScrollView } from "react-native-gesture-handler";
 
 const ItemSeparatorComponent = () => {
-	return <View style={[utilsStyles.itemSeparator, { marginLeft: 50, marginVertical: 12 }]} />
-}
+	return (
+		<View
+			style={[
+				utilsStyles.itemSeparator,
+				{ marginLeft: 50, marginVertical: 12 },
+			]}
+		/>
+	);
+};
 
 const ArtistsScreen = () => {
 	const search = useNavigationSearch({
 		searchBarOptions: {
-			placeholder: 'Find in artists',
+			placeholder: "Find in artists",
 		},
-	})
+	});
 
-	const artists = useArtists()
+	const artists = useArtists();
 
 	const filteredArtists = useMemo(() => {
-		if (!search) return artists
+		if (!search) return artists;
 
-		return artists.filter(artistNameFilter(search))
-	}, [artists, search])
+		return artists.filter(artistNameFilter(search));
+	}, [artists, search]);
 
 	return (
 		<View style={defaultStyles.container}>
@@ -69,7 +82,7 @@ const ArtistsScreen = () => {
 											/>
 										</View>
 
-										<View style={{ width: '100%' }}>
+										<View style={{ width: "100%" }}>
 											<Text numberOfLines={1} style={styles.artistNameText}>
 												{artist.name}
 											</Text>
@@ -77,19 +90,19 @@ const ArtistsScreen = () => {
 									</View>
 								</TouchableHighlight>
 							</Link>
-						)
+						);
 					}}
 				/>
 			</ScrollView>
 		</View>
-	)
-}
+	);
+};
 
 const styles = StyleSheet.create({
 	artistItemContainer: {
-		flexDirection: 'row',
+		flexDirection: "row",
 		columnGap: 14,
-		alignItems: 'center',
+		alignItems: "center",
 	},
 	artistImage: {
 		borderRadius: 32,
@@ -99,8 +112,8 @@ const styles = StyleSheet.create({
 	artistNameText: {
 		...defaultStyles.text,
 		fontSize: 17,
-		maxWidth: '80%',
+		maxWidth: "80%",
 	},
-})
+});
 
-export default ArtistsScreen
+export default ArtistsScreen;

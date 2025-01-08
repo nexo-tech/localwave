@@ -1,26 +1,26 @@
-import { fontSize } from '@/constants/tokens'
-import { trackTitleFilter } from '@/helpers/filter'
-import { generateTracksListId } from '@/helpers/miscellaneous'
-import { Playlist } from '@/helpers/types'
-import { useNavigationSearch } from '@/hooks/useNavigationSearch'
-import { defaultStyles } from '@/styles'
-import { useMemo } from 'react'
-import { StyleSheet, Text, View } from 'react-native'
-import FastImage from 'react-native-fast-image'
-import { QueueControls } from './QueueControls'
-import { TracksList } from './TracksList'
+import { fontSize } from "@/constants/tokens";
+import { trackTitleFilter } from "@/helpers/filter";
+import { generateTracksListId } from "@/helpers/miscellaneous";
+import type { Playlist } from "@/helpers/types";
+import { useNavigationSearch } from "@/hooks/useNavigationSearch";
+import { defaultStyles } from "@/styles";
+import { useMemo } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import FastImage from "react-native-fast-image";
+import { QueueControls } from "./QueueControls";
+import { TracksList } from "./TracksList";
 
 export const PlaylistTracksList = ({ playlist }: { playlist: Playlist }) => {
 	const search = useNavigationSearch({
 		searchBarOptions: {
 			hideWhenScrolling: true,
-			placeholder: 'Find in playlist',
+			placeholder: "Find in playlist",
 		},
-	})
+	});
 
 	const filteredPlaylistTracks = useMemo(() => {
-		return playlist.tracks.filter(trackTitleFilter(search))
-	}, [playlist.tracks, search])
+		return playlist.tracks.filter(trackTitleFilter(search));
+	}, [playlist.tracks, search]);
 
 	return (
 		<TracksList
@@ -45,14 +45,17 @@ export const PlaylistTracksList = ({ playlist }: { playlist: Playlist }) => {
 					</Text>
 
 					{search.length === 0 && (
-						<QueueControls style={{ paddingTop: 24 }} tracks={playlist.tracks} />
+						<QueueControls
+							style={{ paddingTop: 24 }}
+							tracks={playlist.tracks}
+						/>
 					)}
 				</View>
 			}
 			tracks={filteredPlaylistTracks}
 		/>
-	)
-}
+	);
+};
 
 const styles = StyleSheet.create({
 	playlistHeaderContainer: {
@@ -60,21 +63,21 @@ const styles = StyleSheet.create({
 		marginBottom: 32,
 	},
 	artworkImageContainer: {
-		flexDirection: 'row',
-		justifyContent: 'center',
+		flexDirection: "row",
+		justifyContent: "center",
 		height: 300,
 	},
 	artworkImage: {
-		width: '85%',
-		height: '100%',
-		resizeMode: 'cover',
+		width: "85%",
+		height: "100%",
+		resizeMode: "cover",
 		borderRadius: 12,
 	},
 	playlistNameText: {
 		...defaultStyles.text,
 		marginTop: 22,
-		textAlign: 'center',
+		textAlign: "center",
 		fontSize: fontSize.lg,
-		fontWeight: '800',
+		fontWeight: "800",
 	},
-})
+});

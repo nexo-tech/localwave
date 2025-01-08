@@ -1,7 +1,7 @@
-import { StackScreenWithSearchBar } from '@/constants/layout'
-import { defaultStyles } from '@/styles'
-import { Stack } from 'expo-router'
-import { View } from 'react-native'
+import { StackScreenWithSearchBar } from "@/constants/layout";
+import { defaultStyles } from "@/styles";
+import { Stack } from "expo-router";
+import { View } from "react-native";
 
 const SongsScreenLayout = () => {
 	return (
@@ -11,12 +11,12 @@ const SongsScreenLayout = () => {
 					name="index"
 					options={{
 						...StackScreenWithSearchBar,
-						headerTitle: 'Songs',
+						headerTitle: "Songs",
 					}}
 				/>
 			</Stack>
 		</View>
-	)
-}
+	);
+};
 
-export default SongsScreenLayout
+export default SongsScreenLayout;

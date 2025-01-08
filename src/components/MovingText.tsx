@@ -1,29 +1,34 @@
-import { useEffect } from 'react'
+import { useEffect } from "react";
 import Animated, {
 	Easing,
-	StyleProps,
+	type StyleProps,
 	cancelAnimation,
 	useAnimatedStyle,
 	useSharedValue,
 	withDelay,
 	withRepeat,
 	withTiming,
-} from 'react-native-reanimated'
+} from "react-native-reanimated";
 
 export type MovingTextProps = {
-	text: string
-	animationThreshold: number
-	style?: StyleProps
-}
+	text: string;
+	animationThreshold: number;
+	style?: StyleProps;
+};
 
-export const MovingText = ({ text, animationThreshold, style }: MovingTextProps) => {
-	const translateX = useSharedValue(0)
-	const shouldAnimate = text.length >= animationThreshold
+export const MovingText = ({
+	text,
+	animationThreshold,
+	style,
+}: MovingTextProps) => {
+	const translateX = useSharedValue(0);
+	const shouldAnimate = text.length >= animationThreshold;
 
-	const textWidth = text.length * 3
+	const textWidth = text.length * 3;
 
+	// biome-ignore lint/correctness/useExhaustiveDependencies: idk
 	useEffect(() => {
-		if (!shouldAnimate) return
+		if (!shouldAnimate) return;
 
 		translateX.value = withDelay(
 			1000,
@@ -35,19 +40,19 @@ export const MovingText = ({ text, animationThreshold, style }: MovingTextProps)
 				-1,
 				true,
 			),
-		)
+		);
 
 		return () => {
-			cancelAnimation(translateX)
-			translateX.value = 0
-		}
-	}, [translateX, text, animationThreshold, shouldAnimate, textWidth])
+			cancelAnimation(translateX);
+			translateX.value = 0;
+		};
+	}, [translateX, text, animationThreshold, shouldAnimate, textWidth]);
 
 	const animatedStyle = useAnimatedStyle(() => {
 		return {
 			transform: [{ translateX: translateX.value }],
-		}
-	})
+		};
+	});
 
 	return (
 		<Animated.Text
@@ -63,5 +68,5 @@ export const MovingText = ({ text, animationThreshold, style }: MovingTextProps)
 		>
 			{text}
 		</Animated.Text>
-	)
-}
+	);
+};

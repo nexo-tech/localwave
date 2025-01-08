@@ -1,27 +1,27 @@
-import { unknownArtistImageUri } from '@/constants/images'
-import { fontSize } from '@/constants/tokens'
-import { trackTitleFilter } from '@/helpers/filter'
-import { generateTracksListId } from '@/helpers/miscellaneous'
-import { Artist } from '@/helpers/types'
-import { useNavigationSearch } from '@/hooks/useNavigationSearch'
-import { defaultStyles } from '@/styles'
-import { useMemo } from 'react'
-import { StyleSheet, Text, View } from 'react-native'
-import FastImage from 'react-native-fast-image'
-import { QueueControls } from './QueueControls'
-import { TracksList } from './TracksList'
+import { unknownArtistImageUri } from "@/constants/images";
+import { fontSize } from "@/constants/tokens";
+import { trackTitleFilter } from "@/helpers/filter";
+import { generateTracksListId } from "@/helpers/miscellaneous";
+import type { Artist } from "@/helpers/types";
+import { useNavigationSearch } from "@/hooks/useNavigationSearch";
+import { defaultStyles } from "@/styles";
+import { useMemo } from "react";
+import { StyleSheet, Text, View } from "react-native";
+import FastImage from "react-native-fast-image";
+import { QueueControls } from "./QueueControls";
+import { TracksList } from "./TracksList";
 
 export const ArtistTracksList = ({ artist }: { artist: Artist }) => {
 	const search = useNavigationSearch({
 		searchBarOptions: {
 			hideWhenScrolling: true,
-			placeholder: 'Find in songs',
+			placeholder: "Find in songs",
 		},
-	})
+	});
 
 	const filteredArtistTracks = useMemo(() => {
-		return artist.tracks.filter(trackTitleFilter(search))
-	}, [artist.tracks, search])
+		return artist.tracks.filter(trackTitleFilter(search));
+	}, [artist.tracks, search]);
 
 	return (
 		<TracksList
@@ -46,14 +46,17 @@ export const ArtistTracksList = ({ artist }: { artist: Artist }) => {
 					</Text>
 
 					{search.length === 0 && (
-						<QueueControls tracks={filteredArtistTracks} style={{ paddingTop: 24 }} />
+						<QueueControls
+							tracks={filteredArtistTracks}
+							style={{ paddingTop: 24 }}
+						/>
 					)}
 				</View>
 			}
 			tracks={filteredArtistTracks}
 		/>
-	)
-}
+	);
+};
 
 const styles = StyleSheet.create({
 	artistHeaderContainer: {
@@ -61,21 +64,21 @@ const styles = StyleSheet.create({
 		marginBottom: 32,
 	},
 	artworkImageContainer: {
-		flexDirection: 'row',
-		justifyContent: 'center',
+		flexDirection: "row",
+		justifyContent: "center",
 		height: 200,
 	},
 	artistImage: {
-		width: '60%',
-		height: '100%',
-		resizeMode: 'cover',
+		width: "60%",
+		height: "100%",
+		resizeMode: "cover",
 		borderRadius: 128,
 	},
 	artistNameText: {
 		...defaultStyles.text,
 		marginTop: 22,
-		textAlign: 'center',
+		textAlign: "center",
 		fontSize: fontSize.lg,
-		fontWeight: '800',
+		fontWeight: "800",
 	},
-})
+});

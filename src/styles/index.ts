@@ -1,5 +1,5 @@
-import { colors, fontSize } from '@/constants/tokens'
-import { StyleSheet } from 'react-native'
+import { colors, fontSize } from "@/constants/tokens";
+import { StyleSheet } from "react-native";
 
 export const defaultStyles = StyleSheet.create({
 	container: {
@@ -10,13 +10,13 @@ export const defaultStyles = StyleSheet.create({
 		fontSize: fontSize.base,
 		color: colors.text,
 	},
-})
+});
 
 export const utilsStyles = StyleSheet.create({
 	centeredRow: {
-		flexDirection: 'row',
-		justifyContent: 'center',
-		alignItems: 'center',
+		flexDirection: "row",
+		justifyContent: "center",
+		alignItems: "center",
 	},
 	slider: {
 		height: 7,
@@ -30,14 +30,14 @@ export const utilsStyles = StyleSheet.create({
 	emptyContentText: {
 		...defaultStyles.text,
 		color: colors.textMuted,
-		textAlign: 'center',
+		textAlign: "center",
 		marginTop: 20,
 	},
 	emptyContentImage: {
 		width: 200,
 		height: 200,
-		alignSelf: 'center',
+		alignSelf: "center",
 		marginTop: 40,
 		opacity: 0.3,
 	},
-})
+});

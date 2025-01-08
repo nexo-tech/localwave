@@ -1,14 +1,14 @@
-import { Track } from 'react-native-track-player'
+import type { Track } from "react-native-track-player";
 
 export type Playlist = {
-	name: string
-	tracks: Track[]
-	artworkPreview: string
-}
+	name: string;
+	tracks: Track[];
+	artworkPreview: string;
+};
 
 export type Artist = {
-	name: string
-	tracks: Track[]
-}
+	name: string;
+	tracks: Track[];
+};
 
-export type TrackWithPlaylist = Track & { playlist?: string[] }
+export type TrackWithPlaylist = Track & { playlist?: string[] };

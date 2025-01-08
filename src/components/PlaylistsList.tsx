@@ -1,21 +1,23 @@
-import { PlaylistListItem } from '@/components/PlaylistListItem'
-import { unknownTrackImageUri } from '@/constants/images'
-import { playlistNameFilter } from '@/helpers/filter'
-import { Playlist } from '@/helpers/types'
-import { useNavigationSearch } from '@/hooks/useNavigationSearch'
-import { utilsStyles } from '@/styles'
-import { useMemo } from 'react'
-import { FlatList, FlatListProps, Text, View } from 'react-native'
-import FastImage from 'react-native-fast-image'
+import { PlaylistListItem } from "@/components/PlaylistListItem";
+import { unknownTrackImageUri } from "@/constants/images";
+import { playlistNameFilter } from "@/helpers/filter";
+import type { Playlist } from "@/helpers/types";
+import { useNavigationSearch } from "@/hooks/useNavigationSearch";
+import { utilsStyles } from "@/styles";
+import { useMemo } from "react";
+import { FlatList, type FlatListProps, Text, View } from "react-native";
+import FastImage from "react-native-fast-image";
 
 type PlaylistsListProps = {
-	playlists: Playlist[]
-	onPlaylistPress: (playlist: Playlist) => void
-} & Partial<FlatListProps<Playlist>>
+	playlists: Playlist[];
+	onPlaylistPress: (playlist: Playlist) => void;
+} & Partial<FlatListProps<Playlist>>;
 
 const ItemDivider = () => (
-	<View style={{ ...utilsStyles.itemSeparator, marginLeft: 80, marginVertical: 12 }} />
-)
+	<View
+		style={{ ...utilsStyles.itemSeparator, marginLeft: 80, marginVertical: 12 }}
+	/>
+);
 
 export const PlaylistsList = ({
 	playlists,
@@ -24,13 +26,13 @@ export const PlaylistsList = ({
 }: PlaylistsListProps) => {
 	const search = useNavigationSearch({
 		searchBarOptions: {
-			placeholder: 'Find in playlist',
+			placeholder: "Find in playlist",
 		},
-	})
+	});
 
 	const filteredPlaylist = useMemo(() => {
-		return playlists.filter(playlistNameFilter(search))
-	}, [playlists, search])
+		return playlists.filter(playlistNameFilter(search));
+	}, [playlists, search]);
 
 	return (
 		<FlatList
@@ -42,16 +44,22 @@ export const PlaylistsList = ({
 					<Text style={utilsStyles.emptyContentText}>No playlist found</Text>
 
 					<FastImage
-						source={{ uri: unknownTrackImageUri, priority: FastImage.priority.normal }}
+						source={{
+							uri: unknownTrackImageUri,
+							priority: FastImage.priority.normal,
+						}}
 						style={utilsStyles.emptyContentImage}
 					/>
 				</View>
 			}
 			data={filteredPlaylist}
 			renderItem={({ item: playlist }) => (
-				<PlaylistListItem playlist={playlist} onPress={() => handlePlaylistPress(playlist)} />
+				<PlaylistListItem
+					playlist={playlist}
+					onPress={() => handlePlaylistPress(playlist)}
+				/>
 			)}
 			{...flatListProps}
 		/>
-	)
-}
+	);
+};

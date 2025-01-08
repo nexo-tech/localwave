@@ -1,26 +1,30 @@
-import { TrackShortcutsMenu } from '@/components/TrackShortcutsMenu'
-import { StopPropagation } from '@/components/utils/StopPropagation'
-import { unknownTrackImageUri } from '@/constants/images'
-import { colors, fontSize } from '@/constants/tokens'
-import { defaultStyles } from '@/styles'
-import { Entypo, Ionicons } from '@expo/vector-icons'
-import { StyleSheet, Text, TouchableHighlight, View } from 'react-native'
-import FastImage from 'react-native-fast-image'
-import LoaderKit from 'react-native-loader-kit'
-import { Track, useActiveTrack, useIsPlaying } from 'react-native-track-player'
+import { TrackShortcutsMenu } from "@/components/TrackShortcutsMenu";
+import { StopPropagation } from "@/components/utils/StopPropagation";
+import { unknownTrackImageUri } from "@/constants/images";
+import { colors, fontSize } from "@/constants/tokens";
+import { defaultStyles } from "@/styles";
+import { Entypo, Ionicons } from "@expo/vector-icons";
+import { StyleSheet, Text, TouchableHighlight, View } from "react-native";
+import FastImage from "react-native-fast-image";
+import LoaderKit from "react-native-loader-kit";
+import {
+	type Track,
+	useActiveTrack,
+	useIsPlaying,
+} from "react-native-track-player";
 
 export type TracksListItemProps = {
-	track: Track
-	onTrackSelect: (track: Track) => void
-}
+	track: Track;
+	onTrackSelect: (track: Track) => void;
+};
 
 export const TracksListItem = ({
 	track,
 	onTrackSelect: handleTrackSelect,
 }: TracksListItemProps) => {
-	const { playing } = useIsPlaying()
+	const { playing } = useIsPlaying();
 
-	const isActiveTrack = useActiveTrack()?.url === track.url
+	const isActiveTrack = useActiveTrack()?.url === track.url;
 
 	return (
 		<TouchableHighlight onPress={() => handleTrackSelect(track)}>
@@ -57,13 +61,13 @@ export const TracksListItem = ({
 				<View
 					style={{
 						flex: 1,
-						flexDirection: 'row',
-						justifyContent: 'space-between',
-						alignItems: 'center',
+						flexDirection: "row",
+						justifyContent: "space-between",
+						alignItems: "center",
 					}}
 				>
 					{/* Track title + artist */}
-					<View style={{ width: '100%' }}>
+					<View style={{ width: "100%" }}>
 						<Text
 							numberOfLines={1}
 							style={{
@@ -83,31 +87,35 @@ export const TracksListItem = ({
 
 					<StopPropagation>
 						<TrackShortcutsMenu track={track}>
-							<Entypo name="dots-three-horizontal" size={18} color={colors.icon} />
+							<Entypo
+								name="dots-three-horizontal"
+								size={18}
+								color={colors.icon}
+							/>
 						</TrackShortcutsMenu>
 					</StopPropagation>
 				</View>
 			</View>
 		</TouchableHighlight>
-	)
-}
+	);
+};
 
 const styles = StyleSheet.create({
 	trackItemContainer: {
-		flexDirection: 'row',
+		flexDirection: "row",
 		columnGap: 14,
-		alignItems: 'center',
+		alignItems: "center",
 		paddingRight: 20,
 	},
 	trackPlayingIconIndicator: {
-		position: 'absolute',
+		position: "absolute",
 		top: 18,
 		left: 16,
 		width: 16,
 		height: 16,
 	},
 	trackPausedIndicator: {
-		position: 'absolute',
+		position: "absolute",
 		top: 14,
 		left: 14,
 	},
@@ -119,8 +127,8 @@ const styles = StyleSheet.create({
 	trackTitleText: {
 		...defaultStyles.text,
 		fontSize: fontSize.sm,
-		fontWeight: '600',
-		maxWidth: '90%',
+		fontWeight: "600",
+		maxWidth: "90%",
 	},
 	trackArtistText: {
 		...defaultStyles.text,
@@ -128,4 +136,4 @@ const styles = StyleSheet.create({
 		fontSize: 14,
 		marginTop: 4,
 	},
-})
+});

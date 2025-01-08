@@ -1,7 +1,7 @@
-import { StackScreenWithSearchBar } from '@/constants/layout'
-import { defaultStyles } from '@/styles'
-import { Stack } from 'expo-router'
-import { View } from 'react-native'
+import { StackScreenWithSearchBar } from "@/constants/layout";
+import { defaultStyles } from "@/styles";
+import { Stack } from "expo-router";
+import { View } from "react-native";
 
 const FavoritesScreenLayout = () => {
 	return (
@@ -11,12 +11,12 @@ const FavoritesScreenLayout = () => {
 					name="index"
 					options={{
 						...StackScreenWithSearchBar,
-						headerTitle: 'Favorites',
+						headerTitle: "Favorites",
 					}}
 				/>
 			</Stack>
 		</View>
-	)
-}
+	);
+};
 
-export default FavoritesScreenLayout
+export default FavoritesScreenLayout;

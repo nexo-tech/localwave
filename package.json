@@ -5,7 +5,8 @@
 	"scripts": {
 		"android": "expo run:android",
 		"ios": "expo run:ios",
-		"lint": "eslint ."
+		"lint": "eslint .",
+		"check": "biome check"
 	},
 	"dependencies": {
 		"@react-native-menu/menu": "^0.9.1",
@@ -33,6 +34,7 @@
 	},
 	"devDependencies": {
 		"@babel/core": "^7.20.0",
+		"@biomejs/biome": "^1.9.4",
 		"@types/react": "~18.2.45",
 		"@typescript-eslint/eslint-plugin": "^7.4.0",
 		"@typescript-eslint/parser": "^7.4.0",

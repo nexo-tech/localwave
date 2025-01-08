@@ -1,15 +1,15 @@
-import { useEffect, useState } from 'react'
-import { Track, useActiveTrack } from 'react-native-track-player'
+import { useEffect, useState } from "react";
+import { type Track, useActiveTrack } from "react-native-track-player";
 
 export const useLastActiveTrack = () => {
-	const activeTrack = useActiveTrack()
-	const [lastActiveTrack, setLastActiveTrack] = useState<Track>()
+	const activeTrack = useActiveTrack();
+	const [lastActiveTrack, setLastActiveTrack] = useState<Track>();
 
 	useEffect(() => {
-		if (!activeTrack) return
+		if (!activeTrack) return;
 
-		setLastActiveTrack(activeTrack)
-	}, [activeTrack])
+		setLastActiveTrack(activeTrack);
+	}, [activeTrack]);
 
-	return lastActiveTrack
-}
+	return lastActiveTrack;
+};

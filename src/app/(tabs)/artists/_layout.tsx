@@ -1,8 +1,8 @@
-import { StackScreenWithSearchBar } from '@/constants/layout'
-import { colors } from '@/constants/tokens'
-import { defaultStyles } from '@/styles'
-import { Stack } from 'expo-router'
-import { View } from 'react-native'
+import { StackScreenWithSearchBar } from "@/constants/layout";
+import { colors } from "@/constants/tokens";
+import { defaultStyles } from "@/styles";
+import { Stack } from "expo-router";
+import { View } from "react-native";
 
 const ArtistsScreenLayout = () => {
 	return (
@@ -12,14 +12,14 @@ const ArtistsScreenLayout = () => {
 					name="index"
 					options={{
 						...StackScreenWithSearchBar,
-						headerTitle: 'Artists',
+						headerTitle: "Artists",
 					}}
 				/>
 
 				<Stack.Screen
 					name="[name]"
 					options={{
-						headerTitle: '',
+						headerTitle: "",
 						headerBackVisible: true,
 						headerStyle: {
 							backgroundColor: colors.background,
@@ -29,7 +29,7 @@ const ArtistsScreenLayout = () => {
 				/>
 			</Stack>
 		</View>
-	)
-}
+	);
+};
 
-export default ArtistsScreenLayout
+export default ArtistsScreenLayout;

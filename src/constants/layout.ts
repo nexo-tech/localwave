@@ -1,5 +1,5 @@
-import { NativeStackNavigationOptions } from '@react-navigation/native-stack'
-import { colors } from './tokens'
+import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
+import { colors } from "./tokens";
 
 export const StackScreenWithSearchBar: NativeStackNavigationOptions = {
 	headerLargeTitle: true,
@@ -11,6 +11,6 @@ export const StackScreenWithSearchBar: NativeStackNavigationOptions = {
 	},
 	headerTintColor: colors.text,
 	headerTransparent: true,
-	headerBlurEffect: 'prominent',
+	headerBlurEffect: "prominent",
 	headerShadowVisible: false,
-}
+};
