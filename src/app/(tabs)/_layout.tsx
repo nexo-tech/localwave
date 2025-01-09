@@ -87,11 +87,7 @@ const TabsNavigation = () => {
 					options={{
 						title: "Manage",
 						tabBarIcon: ({ color }) => (
-							<MaterialCommunityIcons
-								name="tools"
-								size={28}
-								color={color}
-							/>
+							<MaterialCommunityIcons name="tools" size={28} color={color} />
 						),
 					}}
 				/>
