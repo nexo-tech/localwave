@@ -16,7 +16,7 @@ struct SyncView: View {
             ) { result in
                 print(result)
             }
-        Text("sync1").font(.largeTitle).foregroundColor(.purple)
+        Text("sync").font(.largeTitle).foregroundColor(.purple)
     }
 }
 

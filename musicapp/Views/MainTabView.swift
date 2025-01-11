@@ -1,6 +1,10 @@
 import SwiftUI
 
 struct MainTabView: View {
+    private let app: AppDependencies?
+    init(app: AppDependencies?) {
+        self.app = app
+    }
     var body: some View {
         TabView {
             FavouritesView().tabItem {
@@ -12,7 +16,9 @@ struct MainTabView: View {
             FavouritesView().tabItem {
                 Label("Favourites", systemImage: "books.vertical")
             }
-            SyncView().tabItem {
+            VStack{
+                SyncView()
+            }.tabItem {
                 Label("Sync", systemImage: "icloud.and.arrow.down")
             }
         }.accentColor(.orange)
@@ -20,5 +26,5 @@ struct MainTabView: View {
 }
 
 #Preview {
-    MainTabView()
+    MainTabView(app: nil)
 }

@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		103CBBE92D331D7D00F3CEDF /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 103CBBE82D331D7D00F3CEDF /* libsqlite3.tbd */; };
+		103CBBEB2D331DDA00F3CEDF /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = 103CBBEA2D331DDA00F3CEDF /* SQLite */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		10811E802D31CF02008CAD75 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -24,6 +29,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		103CBBE82D331D7D00F3CEDF /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		10811E6F2D31CF01008CAD75 /* musicapp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = musicapp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		10811E7F2D31CF02008CAD75 /* musicappTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = musicappTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		10811E892D31CF02008CAD75 /* musicappUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = musicappUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -52,6 +58,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				103CBBEB2D331DDA00F3CEDF /* SQLite in Frameworks */,
+				103CBBE92D331D7D00F3CEDF /* libsqlite3.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -72,12 +80,21 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		103CBBE72D331D7D00F3CEDF /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				103CBBE82D331D7D00F3CEDF /* libsqlite3.tbd */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		10811E662D31CF01008CAD75 = {
 			isa = PBXGroup;
 			children = (
 				10811E712D31CF01008CAD75 /* musicapp */,
 				10811E822D31CF02008CAD75 /* musicappTests */,
 				10811E8C2D31CF02008CAD75 /* musicappUITests */,
+				103CBBE72D331D7D00F3CEDF /* Frameworks */,
 				10811E702D31CF01008CAD75 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -106,12 +123,14 @@
 			buildRules = (
 			);
 			dependencies = (
+				103CBBE62D331C9000F3CEDF /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				10811E712D31CF01008CAD75 /* musicapp */,
 			);
 			name = musicapp;
 			packageProductDependencies = (
+				103CBBEA2D331DDA00F3CEDF /* SQLite */,
 			);
 			productName = musicapp;
 			productReference = 10811E6F2D31CF01008CAD75 /* musicapp.app */;
@@ -259,6 +278,10 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		103CBBE62D331C9000F3CEDF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			productRef = 103CBBE52D331C9000F3CEDF /* SQLite */;
+		};
 		10811E812D31CF02008CAD75 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 10811E6E2D31CF01008CAD75 /* musicapp */;
@@ -406,6 +429,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -434,6 +458,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -566,6 +591,19 @@
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		103CBBE52D331C9000F3CEDF /* SQLite */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 10FA3CCA2D32887D00E25072 /* XCRemoteSwiftPackageReference "SQLite" */;
+			productName = SQLite;
+		};
+		103CBBEA2D331DDA00F3CEDF /* SQLite */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 10FA3CCA2D32887D00E25072 /* XCRemoteSwiftPackageReference "SQLite" */;
+			productName = SQLite;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 10811E672D31CF01008CAD75 /* Project object */;
 }
