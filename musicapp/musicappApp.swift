@@ -11,7 +11,8 @@ import SwiftUI
 struct musicappApp: App {
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            // ContentView()
+            MainTabView()
         }
     }
 }

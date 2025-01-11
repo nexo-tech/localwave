@@ -232,7 +232,7 @@ extension ContentView {
             for url in urls {
                 group.addTask {
                     print("[Metadata] Fetching metadata for \(url.lastPathComponent)")
-                    return getAudioMetadata(for: url)
+                    return await getAudioMetadata(for: url)
                 }
             }
 
@@ -263,8 +263,4 @@ extension ContentView {
         print("[Metadata] -> Title: \(title), Artist: \(artist)")
         return AudioFile(url: fileURL, title: title, artist: artist, artwork: artwork)
     }
-}
-
-#Preview {
-    ContentView()
 }
