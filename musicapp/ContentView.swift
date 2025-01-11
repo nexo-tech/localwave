@@ -1,6 +1,6 @@
+import AVFoundation
 import SwiftUI
 import UniformTypeIdentifiers
-import AVFoundation
 
 struct AudioFile: Identifiable {
     let id = UUID()
@@ -19,7 +19,7 @@ struct ContentView: View {
     var body: some View {
         VStack {
             Text("Hello, Doggyman!")
-            
+
             if let folderURL {
                 Text("Selected Folder: \(folderURL.path)")
                     .font(.caption)
@@ -125,7 +125,7 @@ extension ContentView {
                     includingPropertiesForKeys: [
                         .isDirectoryKey,
                         .isSymbolicLinkKey,
-                        .ubiquitousItemDownloadingStatusKey
+                        .ubiquitousItemDownloadingStatusKey,
                     ],
                     options: [.skipsHiddenFiles]
                 )
@@ -135,7 +135,7 @@ extension ContentView {
                     let rv = try item.resourceValues(forKeys: [
                         .isDirectoryKey,
                         .isSymbolicLinkKey,
-                        .ubiquitousItemDownloadingStatusKey
+                        .ubiquitousItemDownloadingStatusKey,
                     ])
 
                     if rv.isSymbolicLink == true {
@@ -144,9 +144,12 @@ extension ContentView {
                     }
 
                     if rv.isDirectory == true {
-                        if let status = rv.ubiquitousItemDownloadingStatus, status == .notDownloaded {
+                        if let status = rv.ubiquitousItemDownloadingStatus, status == .notDownloaded
+                        {
                             do {
-                                print("[BFS] Subfolder not downloaded, requesting download: \(item.lastPathComponent)")
+                                print(
+                                    "[BFS] Subfolder not downloaded, requesting download: \(item.lastPathComponent)"
+                                )
                                 try fm.startDownloadingUbiquitousItem(at: item)
                                 // We'll skip adding to BFS queue until it’s downloaded
                             } catch {
@@ -159,8 +162,12 @@ extension ContentView {
                     } else {
                         let ext = item.pathExtension.lowercased()
                         if ["mp3", "m4a"].contains(ext) {
-                            if let status = rv.ubiquitousItemDownloadingStatus, status == .notDownloaded {
-                                print("[BFS] File not downloaded (\(item.lastPathComponent)), requesting download...")
+                            if let status = rv.ubiquitousItemDownloadingStatus,
+                                status == .notDownloaded
+                            {
+                                print(
+                                    "[BFS] File not downloaded (\(item.lastPathComponent)), requesting download..."
+                                )
                                 do {
                                     try fm.startDownloadingUbiquitousItem(at: item)
                                 } catch {
@@ -171,13 +178,15 @@ extension ContentView {
                                 await waitForDownloadIfNeeded(item)
                                 print("[BFS] \(item.lastPathComponent) finished downloading!")
                             }
-                            print("[BFS] Audio file found, adding to list: \(item.lastPathComponent)")
+                            print(
+                                "[BFS] Audio file found, adding to list: \(item.lastPathComponent)")
                             audioURLs.append(item)
                         }
                     }
                 }
             } catch {
-                print("[BFS] Error reading directory \(current.path): \(error.localizedDescription)")
+                print(
+                    "[BFS] Error reading directory \(current.path): \(error.localizedDescription)")
             }
         }
 
@@ -209,10 +218,12 @@ extension ContentView {
             do {
                 try fm.startDownloadingUbiquitousItem(at: fileURL)
             } catch {
-                print("[Download Wait] Error re-requesting download for \(fileURL.lastPathComponent): \(error)")
+                print(
+                    "[Download Wait] Error re-requesting download for \(fileURL.lastPathComponent): \(error)"
+                )
             }
             print("[Download Wait] \(fileURL.lastPathComponent) still not downloaded; waiting...")
-            try? await Task.sleep(nanoseconds: 300_000_000) // 0.3s
+            try? await Task.sleep(nanoseconds: 300_000_000)  // 0.3s
         }
     }
 
@@ -239,11 +250,14 @@ extension ContentView {
         print("[Metadata] Reading asset for \(fileURL.lastPathComponent)")
         let asset = AVAsset(url: fileURL)
         let common = asset.commonMetadata
-        let title = common.first(where: { $0.commonKey?.rawValue == "title" })?.stringValue
-                    ?? fileURL.deletingPathExtension().lastPathComponent
-        let artist = common.first(where: { $0.commonKey?.rawValue == "artist" })?.stringValue
-                    ?? "Unknown Artist"
-        let artworkData = common.first(where: { $0.commonKey?.rawValue == "artwork" })?.value as? Data
+        let title =
+            common.first(where: { $0.commonKey?.rawValue == "title" })?.stringValue
+            ?? fileURL.deletingPathExtension().lastPathComponent
+        let artist =
+            common.first(where: { $0.commonKey?.rawValue == "artist" })?.stringValue
+            ?? "Unknown Artist"
+        let artworkData =
+            common.first(where: { $0.commonKey?.rawValue == "artwork" })?.value as? Data
         let artwork = artworkData.flatMap { UIImage(data: $0) }
 
         print("[Metadata] -> Title: \(title), Artist: \(artist)")
