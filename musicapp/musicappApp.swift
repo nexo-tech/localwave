@@ -22,9 +22,13 @@ struct musicappApp: App {
             let icloudProvider = DefaultICloudProvider()
             let userCloudService = DefaultUserCloudService(
                 userService: userService, iCloudProvider: icloudProvider)
+            let libraryRepo = try SQLiteLibraryRepository(db: db!)
+            let libraryService = DefaultLibraryService(libraryRepo: libraryRepo)
             let app = AppDependencies(
-                userService: userService, userCloudService: userCloudService,
-                icloudProvider: icloudProvider)
+                userService: userService,
+                userCloudService: userCloudService,
+                icloudProvider: icloudProvider,
+                libraryService: libraryService)
             return MainTabView(app: app)
         } catch {
             return Text("Failed to initialize the app: \(error.localizedDescription)")

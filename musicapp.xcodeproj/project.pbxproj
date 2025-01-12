@@ -29,6 +29,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1035973D2D3457B100456EB8 /* musicapp.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = musicapp.xctestplan; sourceTree = "<group>"; };
 		103CBBE82D331D7D00F3CEDF /* libsqlite3.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = libsqlite3.tbd; path = usr/lib/libsqlite3.tbd; sourceTree = SDKROOT; };
 		10811E6F2D31CF01008CAD75 /* musicapp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = musicapp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		10811E7F2D31CF02008CAD75 /* musicappTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = musicappTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -91,6 +92,7 @@
 		10811E662D31CF01008CAD75 = {
 			isa = PBXGroup;
 			children = (
+				1035973D2D3457B100456EB8 /* musicapp.xctestplan */,
 				10811E712D31CF01008CAD75 /* musicapp */,
 				10811E822D31CF02008CAD75 /* musicappTests */,
 				10811E8C2D31CF02008CAD75 /* musicappUITests */,
@@ -480,8 +482,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JAQ3G6NY69;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
 				MARKETING_VERSION = 1.0;
@@ -498,8 +502,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JAQ3G6NY69;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 18.2;
 				MARKETING_VERSION = 1.0;
@@ -515,8 +521,10 @@
 		10811E9A2D31CF02008CAD75 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JAQ3G6NY69;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.test.test1.musicappUITests;
@@ -531,8 +539,10 @@
 		10811E9B2D31CF02008CAD75 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = JAQ3G6NY69;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.test.test1.musicappUITests;

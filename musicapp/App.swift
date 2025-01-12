@@ -40,13 +40,18 @@ class AppDependencies {
     let userService: UserService
     let userCloudService: UserCloudService
     let icloudProvider: ICloudProvider
+    let libraryService: LibraryService
 
     init(
-        userService: UserService, userCloudService: UserCloudService, icloudProvider: ICloudProvider
+        userService: UserService,
+        userCloudService: UserCloudService,
+        icloudProvider: ICloudProvider,
+        libraryService: LibraryService
     ) {
         self.userService = userService
         self.userCloudService = userCloudService
         self.icloudProvider = icloudProvider
+        self.libraryService = libraryService
     }
 }
 
@@ -54,17 +59,7 @@ struct LibrarySyncResultItem {
     let path: String
     let parentPath: String?
     let isDirectory: Bool
-
-    func pathHash() -> Int64 {
-        return hashStringToInt64(path)
-    }
-
-    func parentPathHash() -> Int64? {
-        if parentPath == nil {
-            return nil
-        }
-        return hashStringToInt64(parentPath!)
-    }
+    let name: String
 }
 
 protocol LibrarySyncService {
@@ -73,6 +68,37 @@ protocol LibrarySyncService {
         onSetLoading: ((_ loading: Bool) -> Void)?
     ) async throws
         -> [LibrarySyncResultItem]
+}
+
+struct FileHelper {
+    let fileURL: URL
+    func toString() -> String {
+        return fileURL.absoluteString
+    }
+
+    func name() -> String {
+        return fileURL.lastPathComponent
+    }
+
+    func parent() -> URL? {
+        return fileURL.deletingLastPathComponent()
+    }
+
+    func relativePath(from baseURL: URL) -> String? {
+        let basePath = baseURL.path
+        let fullPath = fileURL.path
+        guard fullPath.hasPrefix(basePath) else {
+            return nil
+        }
+        return String(fullPath.dropFirst(basePath.count + 1))
+    }
+    
+    static func createURL(baseURL: URL, relativePath: String) -> URL? {
+        if relativePath.isEmpty {
+              return baseURL.absoluteURL // If the relative path is empty, return the base URL
+          }
+        return baseURL.appendingPathComponent(relativePath).absoluteURL
+    }
 }
 
 actor DefaultLibrarySyncService: LibrarySyncService {
@@ -91,6 +117,8 @@ actor DefaultLibrarySyncService: LibrarySyncService {
         let fm = FileManager.default
         var visited: Set<URL> = []
         var queue: [URL] = [folderURL]
+
+        var result = [String: LibrarySyncResultItem]()
 
         guard folderURL.startAccessingSecurityScopedResource() else {
             logger.debug("[BFS] Failed to access security-scoped resource.")
@@ -172,6 +200,8 @@ actor DefaultLibrarySyncService: LibrarySyncService {
         }
         logger.debug("[BFS] BFS complete. Total audio files found: \(audioURLs.count)")
         onSetLoading?(false)
+        
+        return []
     }
 }
 

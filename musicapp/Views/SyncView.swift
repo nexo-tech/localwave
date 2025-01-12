@@ -61,10 +61,16 @@ struct SyncView: View {
 
     private let logger = Logger(subsystem: subsystem, category: "SyncView")
 
-    init(userCloudService: UserCloudService?, icloudProvider: ICloudProvider?) {
+    init(
+        userCloudService: UserCloudService?,
+        icloudProvider: ICloudProvider?,
+        libraryService: LibraryService?
+    ) {
         _syncViewModel = StateObject(
             wrappedValue: SyncViewModel(
-                userCloudService: userCloudService, icloudProvider: icloudProvider))
+                userCloudService: userCloudService,
+                icloudProvider: icloudProvider,
+                libraryService: libraryService))
     }
 
     var body: some View {
@@ -127,7 +133,8 @@ class SyncViewModel: ObservableObject {
         } else if hasICloud() && (createdUser == nil && errorMessage == nil) {
             return .isInitialising
         }
-
+        
+        return .isInitialising
     }
 
     func hasICloud() -> Bool {
@@ -150,5 +157,5 @@ class SyncViewModel: ObservableObject {
 }
 
 #Preview {
-    SyncView(userCloudService: nil, icloudProvider: nil)
+    SyncView(userCloudService: nil, icloudProvider: nil, libraryService: nil)
 }
