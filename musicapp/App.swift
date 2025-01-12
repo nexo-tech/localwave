@@ -1,3 +1,4 @@
+import CloudKit
 import SQLite
 import UIKit
 import os
@@ -24,24 +25,26 @@ public func SetupSQLiteConnection(dbName: String) -> Connection? {
 
 public class AppDependencies {
     public let userService: UserService
+    public let userCloudService: UserCloudService
 
-    public init(userService: UserService) {
+    public init(userService: UserService, userCloudService: UserCloudService) {
         self.userService = userService
+        self.userCloudService = userCloudService
     }
 }
 
-public struct User {
+public struct User: Sendable {
     public let id: Int64?
-    public let icloudId: String
+    public let icloudId: Int64
 }
 
 public protocol UserRepository {
-    func findByIcloudId(icloudId: String) async throws -> User?
+    func findByIcloudId(icloudId: Int64) async throws -> User?
     func create(user: User) async throws -> User
 }
 
 public protocol UserService {
-    func getOrCreateUser(icloudId: String) async throws -> User
+    func getOrCreateUser(icloudId: Int64) async throws -> User
 }
 
 public protocol UserCloudService {
@@ -49,13 +52,49 @@ public protocol UserCloudService {
 }
 
 public protocol ICloudProvider {
-    func getCurrentICloudUserID() async throws -> String?
+    func getCurrentICloudUserID() async throws -> Int64?
     func isICloudAvailable() -> Bool
 }
 
+class DefaultICloudProvider: ICloudProvider {
+    let logger = Logger(subsystem: subsystem, category: "ICloudProvider")
+    func isICloudAvailable() -> Bool {
+        return FileManager.default.ubiquityIdentityToken != nil
+    }
+
+    public func getCurrentICloudUserID() async throws -> Int64? {
+        if let ubiquityIdentityToken = FileManager.default.ubiquityIdentityToken {
+            let tokenData = try NSKeyedArchiver.archivedData(
+                withRootObject: ubiquityIdentityToken, requiringSecureCoding: true)
+            let tokenString = tokenData.base64EncodedString()
+            let hashed = hashBase64ToInt64(tokenString)
+            logger.debug("Current iCloud user token: \(hashed)")
+            return hashed
+        } else {
+            logger.debug("No iCloud account is signed in.")
+            return nil
+        }
+    }
+
+    private func hashBase64ToInt64(_ base64: String) -> Int64 {
+        let fnvOffsetBasis: UInt64 = 0xcbf2_9ce4_8422_2325
+        let fnvPrime: UInt64 = 0x100_0000_01b3
+        var hash = fnvOffsetBasis
+
+        for byte in base64.utf8 {
+            hash ^= UInt64(byte)
+            hash = hash &* fnvPrime
+        }
+
+        return Int64(bitPattern: hash & 0x7FFF_FFFF_FFFF_FFFF)
+    }
+}
+
 public final class DefaultUserCloudService: UserCloudService {
+    let logger = Logger(subsystem: subsystem, category: "UserCloudService")
     public func resolveCurrentICloudUser() async throws -> User? {
         if let icloudId = try await iCloudProvider.getCurrentICloudUserID() {
+            logger.debug("found cloudID \(icloudId)")
             return try await userService.getOrCreateUser(icloudId: icloudId)
         }
         return nil
@@ -74,7 +113,7 @@ public final class DefaultUserService: UserService {
     let logger = Logger(subsystem: subsystem, category: "UserService")
     private var userRepository: UserRepository
 
-    public func getOrCreateUser(icloudId: String) async throws -> User {
+    public func getOrCreateUser(icloudId: Int64) async throws -> User {
         let logger = self.logger
         if let existingUser = try await userRepository.findByIcloudId(icloudId: icloudId) {
             let userId = existingUser.id ?? -1
@@ -101,7 +140,7 @@ let usersTableName = "users"
 actor SQLiteUserRepository: UserRepository {
     let logger = Logger(subsystem: subsystem, category: "SQLiteUserRepository")
 
-    public func findByIcloudId(icloudId: String) throws -> User? {
+    public func findByIcloudId(icloudId: Int64) throws -> User? {
         if let row = try db.pluck(table.filter(colIcloudId == icloudId)) {
             return User(id: row[colId], icloudId: row[colIcloudId])
         }
@@ -117,7 +156,7 @@ actor SQLiteUserRepository: UserRepository {
 
     public init(db: Connection) throws {
         let colId: SQLite.Expression<Int64> = Expression<Int64>("id")
-        let colIcloudId: SQLite.Expression<String> = Expression<String>("icloudId")
+        let colIcloudId: SQLite.Expression<Int64> = Expression<UInt64>("icloudId")
         try db.run(
             table.create(ifNotExists: true) { t in
                 t.column(colId, primaryKey: .autoincrement)
@@ -133,5 +172,5 @@ actor SQLiteUserRepository: UserRepository {
 
     private let table = Table(usersTableName)
     private let colId: SQLite.Expression<Int64>
-    private let colIcloudId: SQLite.Expression<String>
+    private let colIcloudId: SQLite.Expression<Int64>
 }
