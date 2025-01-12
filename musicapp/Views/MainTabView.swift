@@ -17,7 +17,7 @@ struct MainTabView: View {
                 Label("Favourites", systemImage: "books.vertical")
             }
             VStack {
-              SyncView(userCloudService: app?.userCloudService)
+                SyncView(userCloudService: app?.userCloudService, icloudProvider: app?.icloudProvider)
             }.tabItem {
                 Label("Sync", systemImage: "icloud.and.arrow.down")
             }

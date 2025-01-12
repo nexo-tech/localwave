@@ -16,13 +16,15 @@ struct musicappApp: App {
     private func setupView() -> some View {
         do {
             let schemaVersion = 2
-            let db = SetupSQLiteConnection(dbName: "musicapp\(schemaVersion).sqlite")
+            let db = setupSQLiteConnection(dbName: "musicapp\(schemaVersion).sqlite")
             let userRepo = try SQLiteUserRepository(db: db!)
             let userService = DefaultUserService(userRepository: userRepo)
             let icloudProvider = DefaultICloudProvider()
             let userCloudService = DefaultUserCloudService(
                 userService: userService, iCloudProvider: icloudProvider)
-            let app = AppDependencies(userService: userService, userCloudService: userCloudService)
+            let app = AppDependencies(
+                userService: userService, userCloudService: userCloudService,
+                icloudProvider: icloudProvider)
             return MainTabView(app: app)
         } catch {
             return Text("Failed to initialize the app: \(error.localizedDescription)")
