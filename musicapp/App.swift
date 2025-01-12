@@ -60,6 +60,16 @@ struct LibrarySyncResultItem {
     let parentPath: String?
     let isDirectory: Bool
     let name: String
+
+    init(rootURL: URL, current: URL, isDirectory: Bool) {
+        let fh = FileHelper(fileURL: current)
+        self.path = fh.relativePath(from: rootURL) ?? ""
+        self.parentPath = fh.parent().flatMap {
+            FileHelper(fileURL: $0).relativePath(from: rootURL)
+        }
+        self.isDirectory = isDirectory
+        self.name = fh.name()
+    }
 }
 
 protocol LibrarySyncService {
@@ -67,7 +77,7 @@ protocol LibrarySyncService {
         folderURL: URL, onCurrentURL: ((_ url: URL) -> Void)?,
         onSetLoading: ((_ loading: Bool) -> Void)?
     ) async throws
-        -> [LibrarySyncResultItem]
+        -> LibrarySyncResult?
 }
 
 struct FileHelper {
@@ -92,13 +102,19 @@ struct FileHelper {
         }
         return String(fullPath.dropFirst(basePath.count + 1))
     }
-    
+
     static func createURL(baseURL: URL, relativePath: String) -> URL? {
         if relativePath.isEmpty {
-              return baseURL.absoluteURL // If the relative path is empty, return the base URL
-          }
+            return baseURL.absoluteURL  // If the relative path is empty, return the base URL
+        }
         return baseURL.appendingPathComponent(relativePath).absoluteURL
     }
+}
+
+struct LibrarySyncResult {
+    let allItems: [LibrarySyncResultItem]
+    let audioFiles: [LibrarySyncResultItem]
+    let totalAudioFiles: Int
 }
 
 actor DefaultLibrarySyncService: LibrarySyncService {
@@ -107,13 +123,13 @@ actor DefaultLibrarySyncService: LibrarySyncService {
         folderURL: URL, onCurrentURL: ((_ url: URL) -> Void)?,
         onSetLoading: ((_ loading: Bool) -> Void)?
     ) async throws
-        -> [LibrarySyncResultItem]
+        -> LibrarySyncResult?
     {
         logger.debug("[BFS] Starting BFS from: \(folderURL.path)")
 
         onSetLoading?(true)
 
-        var audioURLs: [URL] = []
+        var audioURLs: [LibrarySyncResultItem] = []
         let fm = FileManager.default
         var visited: Set<URL> = []
         var queue: [URL] = [folderURL]
@@ -123,7 +139,7 @@ actor DefaultLibrarySyncService: LibrarySyncService {
         guard folderURL.startAccessingSecurityScopedResource() else {
             logger.debug("[BFS] Failed to access security-scoped resource.")
             onSetLoading?(false)
-            return []
+            return nil
         }
         defer {
             logger.debug("[BFS] Stopping access to security-scoped resource.")
@@ -132,6 +148,8 @@ actor DefaultLibrarySyncService: LibrarySyncService {
 
         while !queue.isEmpty {
             let current = queue.removeFirst().resolvingSymlinksInPath()
+            result[FileHelper(fileURL: current).toString()] = LibrarySyncResultItem(
+                rootURL: folderURL, current: current, isDirectory: true)
 
             onCurrentURL?(current)
             logger.debug("[BFS] Dequeued folder: \(current.path)")
@@ -186,10 +204,13 @@ actor DefaultLibrarySyncService: LibrarySyncService {
                         queue.append(item)
                     } else {
                         let ext = item.pathExtension.lowercased()
-                        if ["mp3", "m4a"].contains(ext) {
+                        if ["mp3", "m4a", "aiff"].contains(ext) {
                             logger.debug(
                                 "[BFS] Audio file found, adding to list: \(item.lastPathComponent)")
-                            audioURLs.append(item)
+                            let resultItem = LibrarySyncResultItem(
+                                rootURL: folderURL, current: item, isDirectory: false)
+                            audioURLs.append(resultItem)
+                            result[FileHelper(fileURL: item).toString()] = resultItem
                         }
                     }
                 }
@@ -200,8 +221,9 @@ actor DefaultLibrarySyncService: LibrarySyncService {
         }
         logger.debug("[BFS] BFS complete. Total audio files found: \(audioURLs.count)")
         onSetLoading?(false)
-        
-        return []
+
+        return LibrarySyncResult(
+            allItems: Array(result.values), audioFiles: audioURLs, totalAudioFiles: audioURLs.count)
     }
 }
 
