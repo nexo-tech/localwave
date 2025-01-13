@@ -55,18 +55,26 @@ class AppDependencies {
     }
 }
 
+struct LibrarySyncResult {
+    let allItems: [LibrarySyncResultItem]
+    let audioFiles: [LibrarySyncResultItem]
+    let totalAudioFiles: Int
+}
+
 struct LibrarySyncResultItem {
-    let path: String
-    let parentPath: String?
+    let relativePath: String
+    let parentURL: URL?
+    let url: URL
     let isDirectory: Bool
     let name: String
 
     init(rootURL: URL, current: URL, isDirectory: Bool) {
         let fh = FileHelper(fileURL: current)
-        self.path = fh.relativePath(from: rootURL) ?? ""
-        self.parentPath = fh.parent().flatMap {
-            FileHelper(fileURL: $0).relativePath(from: rootURL)
+        self.relativePath = fh.relativePath(from: rootURL) ?? ""
+        self.parentURL = fh.parent().flatMap {
+            $0
         }
+        self.url = current
         self.isDirectory = isDirectory
         self.name = fh.name()
     }
@@ -74,10 +82,12 @@ struct LibrarySyncResultItem {
 
 protocol LibrarySyncService {
     func syncDir(
-        folderURL: URL, onCurrentURL: ((_ url: URL) -> Void)?,
+        libraryId: Int64,
+        folderURL: URL,
+        onCurrentURL: ((_ url: URL?) -> Void)?,
         onSetLoading: ((_ loading: Bool) -> Void)?
     ) async throws
-        -> LibrarySyncResult?
+        -> Library?
 }
 
 struct FileHelper {
@@ -111,15 +121,92 @@ struct FileHelper {
     }
 }
 
-struct LibrarySyncResult {
-    let allItems: [LibrarySyncResultItem]
-    let audioFiles: [LibrarySyncResultItem]
-    let totalAudioFiles: Int
-}
-
 actor DefaultLibrarySyncService: LibrarySyncService {
     let logger = Logger(subsystem: subsystem, category: "LibrarySyncService")
+
+    let libraryRepository: LibraryRepository
+    let libraryPathRepository: LibraryPathRepository
+
+    init(
+        libraryRepository: LibraryRepository,
+        libraryPathRepository: LibraryPathRepository
+    ) {
+        self.libraryRepository = libraryRepository
+        self.libraryPathRepository = libraryPathRepository
+    }
+
     func syncDir(
+        libraryId: Int64, folderURL: URL, onCurrentURL: ((_ url: URL?) -> Void)?,
+        onSetLoading: ((_ loading: Bool) -> Void)?
+    ) async throws
+        -> Library?
+    {
+        logger.debug("starting to collect items")
+        do {
+            let result = try await syncDirInner(
+                folderURL: folderURL, onCurrentURL: onCurrentURL, onSetLoading: onSetLoading)
+            let runId = Int64(Date().timeIntervalSince1970 * 1000)
+
+            let itemsToCreate = result?.allItems.map { x in
+                var parentPathId: Int64? = nil
+                if let parentPath = x.parentURL?.absoluteString {
+                    parentPathId = hashStringToInt64(parentPath)
+                }
+                let pathId = hashStringToInt64(x.url.absoluteString)
+                return LibraryPath(
+                    id: nil,
+                    libraryId: libraryId,
+                    pathId: pathId,
+                    parentPathId: parentPathId,
+                    name: x.name,
+                    relativePath: x.relativePath,
+                    isDirectory: x.isDirectory,
+                    fileHashSHA256: nil,
+                    runId: runId,
+                    createdAt: Date(),
+                    updatedAt: nil
+                )
+            }
+
+            let items = itemsToCreate ?? []
+            let numberOfItemsToUpsert = items.count
+
+            logger.debug("upserting \(numberOfItemsToUpsert) items")
+            try await libraryPathRepository.batchUpsert(paths: items)
+
+            logger.debug("removing stale paths...")
+            let deletedCount = try await libraryPathRepository.deleteMany(
+                libraryId: libraryId, excludingRunId: runId)
+
+            logger.debug("removed \(deletedCount) stale paths")
+
+            if let result = result {
+                let totalAudioFiles = result.totalAudioFiles
+                logger.debug("updating library \(libraryId)")
+                if var lib = try await libraryRepository.getOne(id: libraryId) {
+                    lib.lastSyncedAt = Date()
+                    lib.updatedAt = Date()
+                    lib.totalPaths = totalAudioFiles
+                    return try await libraryRepository.updateLibrary(library: lib)
+                } else {
+                    logger.error("for some reason library \(libraryId) wasn't found")
+                }
+            }
+
+            return nil
+        } catch {
+            logger.error("sync dir error: \(error)")
+            if var lib = try await libraryRepository.getOne(id: libraryId) {
+                lib.lastSyncedAt = Date()
+                lib.updatedAt = Date()
+                lib.syncError = "\(error)"
+                return try await libraryRepository.updateLibrary(library: lib)
+            }
+            return nil
+        }
+    }
+
+    func syncDirInner(
         folderURL: URL, onCurrentURL: ((_ url: URL) -> Void)?,
         onSetLoading: ((_ loading: Bool) -> Void)?
     ) async throws
@@ -227,20 +314,38 @@ actor DefaultLibrarySyncService: LibrarySyncService {
     }
 }
 
+// models
 struct User: Sendable {
     let id: Int64?
     let icloudId: Int64
 }
 
 struct Library: Sendable {
+    var id: Int64?
+    var dirPath: String
+    var userId: Int64
+    var totalPaths: Int?
+    var syncError: String?
+    var isCurrent: Bool
+    var createdAt: Date
+    var lastSyncedAt: Date?
+    var updatedAt: Date?
+}
+
+struct LibraryPath: Sendable {
     let id: Int64?
-    let dirPath: String
-    let userId: Int64
-    let totalPaths: Int?
-    let syncError: String?
-    let isCurrent: Bool
+    let libraryId: Int64
+
+    let pathId: Int64
+    let parentPathId: Int64?
+    let name: String
+    let relativePath: String
+    let isDirectory: Bool
+
+    let fileHashSHA256: Data?
+    let runId: Int64
+
     let createdAt: Date
-    let lastSyncedAt: Date?
     let updatedAt: Date?
 }
 
@@ -281,9 +386,19 @@ class DefaultLibraryService: LibraryService {
 
 }
 
+protocol LibraryPathRepository {
+    func create(path: LibraryPath) async throws -> LibraryPath
+    func updateFileHash(pathId: Int64, fileHash: Data?) async throws
+    func deleteMany(libraryId: Int64) async throws
+    func getByParentId(parentId: Int64) async throws -> [LibraryPath]
+    func getByPath(relativePath: String, libraryId: Int64) async throws -> LibraryPath?
+    func batchUpsert(paths: [LibraryPath]) async throws
+    func deleteMany(libraryId: Int64, excludingRunId: Int64) async throws -> Int
+}
 protocol LibraryRepository {
     func create(library: Library) async throws -> Library
     func findOneByUserId(userId: Int64, path: String?) async throws -> [Library]
+    func getOne(id: Int64) async throws -> Library?
     func updateLibrary(library: Library) async throws -> Library
     // needs to set isCurrent true to the library with userId
     // and for the rest of users libraries set isCurrentFalse
@@ -468,6 +583,24 @@ actor SQLiteLibraryRepository: LibraryRepository {
         self.colUpdatedAt = colUpdatedAt
     }
 
+    func getOne(id: Int64) async throws -> Library? {
+        let query = table.filter(colId == id)
+        if let row = try db.pluck(query) {
+            return Library(
+                id: row[colId],
+                dirPath: row[colDirPath],
+                userId: row[colUserId],
+                totalPaths: row[colTotalPaths],
+                syncError: row[colSyncError],
+                isCurrent: row[colIsCurrent],
+                createdAt: row[colCreatedAt],
+                lastSyncedAt: row[colLastSyncedAt],
+                updatedAt: row[colUpdatedAt]
+            )
+        }
+        return nil
+    }
+
     // MARK: - Create
     func create(library: Library) async throws -> Library {
         let insert = table.insert(
@@ -563,5 +696,214 @@ actor SQLiteLibraryRepository: LibraryRepository {
         } else {
             throw NSError(domain: "Library not found", code: 0, userInfo: nil)
         }
+    }
+}
+
+actor SQLiteLibraryPathRepository: LibraryPathRepository {
+    private let db: Connection
+    private let table = Table("library_paths")
+
+    private let colId: SQLite.Expression<Int64>
+    private let colLibraryId: SQLite.Expression<Int64>
+    private let colPathId: SQLite.Expression<Int64>
+    private let colParentPathId: SQLite.Expression<Int64?>
+    private let colName: SQLite.Expression<String>
+    private let colRelativePath: SQLite.Expression<String>
+    private let colIsDirectory: SQLite.Expression<Bool>
+    private let colFileHashSHA256: SQLite.Expression<Data?>
+    private let colRunId: SQLite.Expression<Int64>
+    private let colCreatedAt: SQLite.Expression<Date>
+    private let colUpdatedAt: SQLite.Expression<Date?>
+
+    private let logger = Logger(subsystem: subsystem, category: "SQLiteLibraryPathRepository")
+
+    // MARK: - Initializer
+    init(db: Connection) throws {
+        let colId = SQLite.Expression<Int64>("id")
+        let colLibraryId = SQLite.Expression<Int64>("libraryId")
+        let colPathId = SQLite.Expression<Int64>("pathId")
+        let colParentPathId = SQLite.Expression<Int64?>("parentPathId")
+        let colName = SQLite.Expression<String>("name")
+        let colRelativePath = SQLite.Expression<String>("relativePath")
+        let colIsDirectory = SQLite.Expression<Bool>("isDirectory")
+        let colFileHashSHA256 = SQLite.Expression<Data?>("fileHashSHA256")
+        let colRunId = SQLite.Expression<Int64>("runId")
+        let colCreatedAt = SQLite.Expression<Date>("createdAt")
+        let colUpdatedAt = SQLite.Expression<Date?>("updatedAt")
+
+        self.db = db
+
+        try db.run(
+            table.create(ifNotExists: true) { t in
+                t.column(colId, primaryKey: .autoincrement)
+                t.column(colLibraryId)
+                t.column(colPathId)
+                t.column(colParentPathId)
+                t.column(colName)
+                t.column(colRelativePath)
+                t.column(colIsDirectory)
+                t.column(colFileHashSHA256)
+                t.column(colRunId)
+                t.column(colCreatedAt)
+                t.column(colUpdatedAt)
+            }
+        )
+        logger.debug("Created table: library_paths")
+
+        self.colId = colId
+        self.colLibraryId = colLibraryId
+        self.colPathId = colPathId
+        self.colParentPathId = colParentPathId
+        self.colName = colName
+        self.colRelativePath = colRelativePath
+        self.colIsDirectory = colIsDirectory
+        self.colFileHashSHA256 = colFileHashSHA256
+        self.colRunId = colRunId
+        self.colCreatedAt = colCreatedAt
+        self.colUpdatedAt = colUpdatedAt
+    }
+    func deleteMany(libraryId: Int64, excludingRunId: Int64) async throws -> Int {
+        let query = table.filter(colLibraryId == libraryId && colRunId != excludingRunId)
+        let count = try db.run(query.delete())
+        logger.debug(
+            "Deleted \(count) library paths for libraryId: \(libraryId) excluding runId: \(excludingRunId)"
+        )
+        return count
+    }
+    // MARK: - Create
+    func create(path: LibraryPath) async throws -> LibraryPath {
+        let insert = table.insert(
+            colLibraryId <- path.libraryId,
+            colPathId <- path.pathId,
+            colParentPathId <- path.parentPathId,
+            colName <- path.name,
+            colRelativePath <- path.relativePath,
+            colIsDirectory <- path.isDirectory,
+            colFileHashSHA256 <- path.fileHashSHA256,
+            colRunId <- path.runId,
+            colCreatedAt <- path.createdAt,
+            colUpdatedAt <- path.updatedAt
+        )
+        let rowId = try db.run(insert)
+        logger.debug("Inserted library path with ID: \(rowId)")
+        return path.copyWith(id: rowId)
+    }
+
+    // MARK: - Update File Hash
+    func updateFileHash(pathId: Int64, fileHash: Data?) async throws {
+        let query = table.filter(colPathId == pathId)
+        try db.run(query.update(colFileHashSHA256 <- fileHash))
+        logger.debug("Updated file hash for path ID: \(pathId)")
+    }
+
+    // MARK: - Delete Many
+    func deleteMany(libraryId: Int64) async throws {
+        let query = table.filter(colLibraryId == libraryId)
+        let count = try db.run(query.delete())
+        logger.debug("Deleted \(count) library paths for library ID: \(libraryId)")
+    }
+
+    // MARK: - Get By Parent ID
+    func getByParentId(parentId: Int64) async throws -> [LibraryPath] {
+        try db.prepare(table.filter(colParentPathId == parentId)).map { row in
+            LibraryPath(
+                id: row[colId],
+                libraryId: row[colLibraryId],
+                pathId: row[colPathId],
+                parentPathId: row[colParentPathId],
+                name: row[colName],
+                relativePath: row[colRelativePath],
+                isDirectory: row[colIsDirectory],
+                fileHashSHA256: row[colFileHashSHA256],
+                runId: row[colRunId],
+                createdAt: row[colCreatedAt],
+                updatedAt: row[colUpdatedAt]
+            )
+        }
+    }
+
+    // MARK: - Get By Path
+    func getByPath(relativePath: String, libraryId: Int64) async throws -> LibraryPath? {
+        let query = table.filter(colRelativePath == relativePath && colLibraryId == libraryId)
+        if let row = try db.pluck(query) {
+            return LibraryPath(
+                id: row[colId],
+                libraryId: row[colLibraryId],
+                pathId: row[colPathId],
+                parentPathId: row[colParentPathId],
+                name: row[colName],
+                relativePath: row[colRelativePath],
+                isDirectory: row[colIsDirectory],
+                fileHashSHA256: row[colFileHashSHA256],
+                runId: row[colRunId],
+                createdAt: row[colCreatedAt],
+                updatedAt: row[colUpdatedAt]
+            )
+        }
+        return nil
+    }
+
+    func batchUpsert(paths: [LibraryPath]) async throws {
+        if paths.count == 0 {
+            return
+        }
+        try db.transaction {
+            for path in paths {
+                let query = table.filter(colLibraryId == path.libraryId && colPathId == path.pathId)
+                if (try db.pluck(query)) != nil {
+                    // Update existing record
+                    try db.run(
+                        query.update(
+                            colParentPathId <- path.parentPathId,
+                            colName <- path.name,
+                            colRelativePath <- path.relativePath,
+                            colIsDirectory <- path.isDirectory,
+                            colFileHashSHA256 <- path.fileHashSHA256,
+                            colRunId <- path.runId,
+                            colUpdatedAt <- path.updatedAt
+                        ))
+                    logger.debug(
+                        "Updated library path with libraryId: \(path.libraryId), pathId: \(path.pathId)"
+                    )
+                } else {
+                    // Insert new record
+                    try db.run(
+                        table.insert(
+                            colLibraryId <- path.libraryId,
+                            colPathId <- path.pathId,
+                            colParentPathId <- path.parentPathId,
+                            colName <- path.name,
+                            colRelativePath <- path.relativePath,
+                            colIsDirectory <- path.isDirectory,
+                            colFileHashSHA256 <- path.fileHashSHA256,
+                            colRunId <- path.runId,
+                            colCreatedAt <- path.createdAt,
+                            colUpdatedAt <- path.updatedAt
+                        ))
+                    logger.debug(
+                        "Inserted new library path with libraryId: \(path.libraryId), pathId: \(path.pathId)"
+                    )
+                }
+            }
+        }
+    }
+}
+
+// Helper extension for copying with new ID
+extension LibraryPath {
+    func copyWith(id: Int64?) -> LibraryPath {
+        return LibraryPath(
+            id: id,
+            libraryId: libraryId,
+            pathId: pathId,
+            parentPathId: parentPathId,
+            name: name,
+            relativePath: relativePath,
+            isDirectory: isDirectory,
+            fileHashSHA256: fileHashSHA256,
+            runId: runId,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
     }
 }
