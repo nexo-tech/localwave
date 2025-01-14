@@ -23,7 +23,12 @@ struct musicappApp: App {
             let userCloudService = DefaultUserCloudService(
                 userService: userService, iCloudProvider: icloudProvider)
             let libraryRepo = try SQLiteLibraryRepository(db: db!)
-            let libraryService = DefaultLibraryService(libraryRepo: libraryRepo)
+            let libraryPathRepository = try SQLiteLibraryPathRepository(db: db!)
+            let librarySyncService = DefaultLibrarySyncService(
+                libraryRepository: libraryRepo,
+                libraryPathRepository: libraryPathRepository)
+            let libraryService = DefaultLibraryService(
+                libraryRepo: libraryRepo, librarySyncService: librarySyncService)
             let app = AppDependencies(
                 userService: userService,
                 userCloudService: userCloudService,

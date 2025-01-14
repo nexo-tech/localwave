@@ -280,6 +280,8 @@ actor DefaultLibrarySyncService: LibrarySyncService {
                                 )
                                 try fm.startDownloadingUbiquitousItem(at: item)
                                 // We'll skip adding to BFS queue until it’s downloaded
+                               try await waitForFolderDownloadIfNeeded(item)
+
                             } catch {
                                 logger.debug(
                                     "[BFS] Error requesting iCloud subfolder download: \(error)")
@@ -311,6 +313,115 @@ actor DefaultLibrarySyncService: LibrarySyncService {
 
         return LibrarySyncResult(
             allItems: Array(result.values), audioFiles: audioURLs, totalAudioFiles: audioURLs.count)
+    }
+    
+    private var metadataQuery: NSMetadataQuery?
+        private var folderDownloadContinuation: CheckedContinuation<Void, Error>?
+
+        func waitForFolderDownloadIfNeeded(_ folderURL: URL) async throws {
+            try await withCheckedThrowingContinuation { continuation in
+                folderDownloadContinuation = continuation
+
+                // Create your observer (non-actor)
+                let observer = iCloudFolderDownloadObserver(actor: self, folderURL: folderURL)
+                observer.startObserving()
+                observer.startQuery()  // We'll set metadataQuery from inside the actor
+            }
+        }
+        
+        func setMetadataQuery(_ query: NSMetadataQuery) {
+            // This runs on the actor context, so we can safely mutate actor properties
+            self.metadataQuery = query
+        }
+        
+        func handleQueryUpdate(_ notification: Notification, folderURL: URL) {
+            guard let query = metadataQuery else { return }
+            query.disableUpdates()
+            
+            var allDownloaded = true
+            
+            // Check each item’s iCloud status
+            for case let metadataItem as NSMetadataItem in query.results {
+                guard
+                    let status = metadataItem.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String,
+                    let itemURL = metadataItem.value(forAttribute: NSMetadataItemURLKey) as? URL
+                else { continue }
+                
+                if status != NSMetadataUbiquitousItemDownloadingStatusCurrent {
+                    do {
+                        try FileManager.default.startDownloadingUbiquitousItem(at: itemURL)
+                    } catch {
+                        // handle error
+                    }
+                    allDownloaded = false
+                }
+            }
+            
+            if allDownloaded {
+                finishFolderDownloadCheck()
+            }
+            
+            query.enableUpdates()
+        }
+        
+        func finishFolderDownloadCheck() {
+            metadataQuery?.stop()
+            metadataQuery = nil
+            folderDownloadContinuation?.resume(returning: ())
+            folderDownloadContinuation = nil
+        }
+    
+}
+
+
+
+// MARK: - Observer Class
+
+class iCloudFolderDownloadObserver: NSObject {
+    private unowned let actorRef: DefaultLibrarySyncService
+    private let folderURL: URL
+    
+    init(actor: DefaultLibrarySyncService, folderURL: URL) {
+        self.actorRef = actor
+        self.folderURL = folderURL
+    }
+    
+    func startObserving() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onQueryUpdate(_:)),
+            name: .NSMetadataQueryDidUpdate,
+            object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onQueryUpdate(_:)),
+            name: .NSMetadataQueryDidFinishGathering,
+            object: nil
+        )
+    }
+    
+    func startQuery() {
+        let query = NSMetadataQuery()
+        query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
+        query.predicate = NSPredicate(
+            format: "%K BEGINSWITH %@",
+            NSMetadataItemPathKey,
+            folderURL.path
+        )
+        
+        // Hop onto the actor to set metadataQuery and then start
+        Task {
+            await actorRef.setMetadataQuery(query)
+            query.start()
+        }
+    }
+    
+    @objc private func onQueryUpdate(_ notification: Notification) {
+        // Bridge back to the actor
+        Task {
+            await actorRef.handleQueryUpdate(notification, folderURL: folderURL)
+        }
     }
 }
 
@@ -351,10 +462,28 @@ struct LibraryPath: Sendable {
 
 protocol LibraryService {
     func registerLibraryPath(userId: Int64, path: String) async throws -> Library
+    func getCurrentLibrary(userId: Int64) async throws -> Library?
+    func syncService() -> LibrarySyncService
+    func repository() -> LibraryRepository
 }
 
 class DefaultLibraryService: LibraryService {
     let logger = Logger(subsystem: subsystem, category: "LibraryService")
+    func repository() -> LibraryRepository {
+        return libraryRepo
+    }
+    func getCurrentLibrary(userId: Int64) async throws -> Library? {
+        let libraries = try await libraryRepo.findOneByUserId(userId: userId, path: nil)
+        if libraries.count == 0 {
+            return nil
+        } else if let lib = libraries.first(where: { $0.isCurrent }) {
+            return lib
+        } else {
+            let lib = libraries[0]
+            return try await libraryRepo.setCurrentLibrary(userId: userId, libraryId: lib.id!)
+        }
+    }
+
     func registerLibraryPath(userId: Int64, path: String) async throws -> Library {
         let library = try await libraryRepo.findOneByUserId(userId: userId, path: path)
         if library.count == 0 {
@@ -378,10 +507,15 @@ class DefaultLibraryService: LibraryService {
         }
     }
 
+    func syncService() -> LibrarySyncService {
+        return librarySyncService
+    }
     private var libraryRepo: LibraryRepository
+    private var librarySyncService: LibrarySyncService
 
-    init(libraryRepo: LibraryRepository) {
+    init(libraryRepo: LibraryRepository, librarySyncService: LibrarySyncService) {
         self.libraryRepo = libraryRepo
+        self.librarySyncService = librarySyncService
     }
 
 }
