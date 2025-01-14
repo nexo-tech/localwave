@@ -315,58 +315,22 @@ actor DefaultLibrarySyncService: LibrarySyncService {
             allItems: Array(result.values), audioFiles: audioURLs, totalAudioFiles: audioURLs.count)
     }
     
-    private var metadataQuery: NSMetadataQuery?
-        private var folderDownloadContinuation: CheckedContinuation<Void, Error>?
-
+    private var folderDownloadContinuation: CheckedContinuation<Void, Error>?
+        
+        /// Call this from somewhere in your code, for example:
+        /// try await myActor.waitForFolderDownloadIfNeeded(folderURL)
         func waitForFolderDownloadIfNeeded(_ folderURL: URL) async throws {
             try await withCheckedThrowingContinuation { continuation in
-                folderDownloadContinuation = continuation
-
-                // Create your observer (non-actor)
-                let observer = iCloudFolderDownloadObserver(actor: self, folderURL: folderURL)
-                observer.startObserving()
-                observer.startQuery()  // We'll set metadataQuery from inside the actor
-            }
-        }
-        
-        func setMetadataQuery(_ query: NSMetadataQuery) {
-            // This runs on the actor context, so we can safely mutate actor properties
-            self.metadataQuery = query
-        }
-        
-        func handleQueryUpdate(_ notification: Notification, folderURL: URL) {
-            guard let query = metadataQuery else { return }
-            query.disableUpdates()
-            
-            var allDownloaded = true
-            
-            // Check each item’s iCloud status
-            for case let metadataItem as NSMetadataItem in query.results {
-                guard
-                    let status = metadataItem.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String,
-                    let itemURL = metadataItem.value(forAttribute: NSMetadataItemURLKey) as? URL
-                else { continue }
+                self.folderDownloadContinuation = continuation
                 
-                if status != NSMetadataUbiquitousItemDownloadingStatusCurrent {
-                    do {
-                        try FileManager.default.startDownloadingUbiquitousItem(at: itemURL)
-                    } catch {
-                        // handle error
-                    }
-                    allDownloaded = false
-                }
+                // Set up a normal class to handle the metadata query
+                let observer = iCloudFolderDownloadObserver(folderURL: folderURL, actorRef: self)
+                observer.startQuery()
             }
-            
-            if allDownloaded {
-                finishFolderDownloadCheck()
-            }
-            
-            query.enableUpdates()
         }
         
-        func finishFolderDownloadCheck() {
-            metadataQuery?.stop()
-            metadataQuery = nil
+        /// Called from the observer once everything is downloaded.
+        func notifyAllItemsDownloaded() {
             folderDownloadContinuation?.resume(returning: ())
             folderDownloadContinuation = nil
         }
@@ -374,56 +338,91 @@ actor DefaultLibrarySyncService: LibrarySyncService {
 }
 
 
-
-// MARK: - Observer Class
-
+/// A normal class that manages NSMetadataQuery and handles notifications.
+/// Nothing here is isolated, so it can safely use @objc methods and store
+/// non-Sendable types like NSMetadataQuery.
 class iCloudFolderDownloadObserver: NSObject {
-    private unowned let actorRef: DefaultLibrarySyncService
     private let folderURL: URL
+    private unowned let actorRef: DefaultLibrarySyncService
+    private let query = NSMetadataQuery()
     
-    init(actor: DefaultLibrarySyncService, folderURL: URL) {
-        self.actorRef = actor
+    init(folderURL: URL, actorRef: DefaultLibrarySyncService) {
         self.folderURL = folderURL
-    }
-    
-    func startObserving() {
+        self.actorRef = actorRef
+        super.init()
+        
+        // We observe the query’s notifications directly.
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(onQueryUpdate(_:)),
+            selector: #selector(onQueryDidUpdate(_:)),
             name: .NSMetadataQueryDidUpdate,
-            object: nil
+            object: query
         )
         NotificationCenter.default.addObserver(
             self,
-            selector: #selector(onQueryUpdate(_:)),
+            selector: #selector(onQueryDidFinish(_:)),
             name: .NSMetadataQueryDidFinishGathering,
-            object: nil
+            object: query
         )
     }
     
+    /// Starts the iCloud Metadata Query
     func startQuery() {
-        let query = NSMetadataQuery()
         query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
         query.predicate = NSPredicate(
             format: "%K BEGINSWITH %@",
             NSMetadataItemPathKey,
             folderURL.path
         )
-        
-        // Hop onto the actor to set metadataQuery and then start
-        Task {
-            await actorRef.setMetadataQuery(query)
-            query.start()
-        }
+        query.start()
     }
     
-    @objc private func onQueryUpdate(_ notification: Notification) {
-        // Bridge back to the actor
-        Task {
-            await actorRef.handleQueryUpdate(notification, folderURL: folderURL)
+    /// Fired repeatedly when the query updates
+    @objc private func onQueryDidUpdate(_ notification: Notification) {
+        checkAllItemsDownloaded()
+    }
+    
+    /// Fired once when the query finishes its initial gathering
+    @objc private func onQueryDidFinish(_ notification: Notification) {
+        query.disableUpdates()
+        checkAllItemsDownloaded()
+        query.enableUpdates()
+    }
+    
+    /// Checks if all items in the query are downloaded. If they are, we stop the query and inform the actor.
+    private func checkAllItemsDownloaded() {
+        var allDownloaded = true
+        
+        for case let item as NSMetadataItem in query.results {
+            if let status = item.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String,
+               status != NSMetadataUbiquitousItemDownloadingStatusCurrent
+            {
+                allDownloaded = false
+                // Attempt to start downloading the file if it isn't downloaded
+                if let itemURL = item.value(forAttribute: NSMetadataItemURLKey) as? URL {
+                    do {
+                        try FileManager.default.startDownloadingUbiquitousItem(at: itemURL)
+                    } catch {
+                        // handle or log the error
+                    }
+                }
+            }
+        }
+        
+        if allDownloaded {
+            // Stop observing now that we are done
+            query.stop()
+            NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidUpdate, object: query)
+            NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidFinishGathering, object: query)
+            
+            // Notify actor: no non-Sendable data is passed, so no concurrency warnings
+            Task {
+                await actorRef.notifyAllItemsDownloaded()
+            }
         }
     }
 }
+
 
 // models
 struct User: Sendable {
