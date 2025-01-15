@@ -1,4 +1,4 @@
-import CloudKit
+import FilesProvider
 import SQLite
 import UIKit
 import os
@@ -207,222 +207,195 @@ actor DefaultLibrarySyncService: LibrarySyncService {
     }
 
     func syncDirInner(
-        folderURL: URL, onCurrentURL: ((_ url: URL) -> Void)?,
+        folderURL: URL,
+        onCurrentURL: ((_ url: URL) -> Void)?,
         onSetLoading: ((_ loading: Bool) -> Void)?
     ) async throws
         -> LibrarySyncResult?
     {
-        logger.debug("[BFS] Starting BFS from: \(folderURL.path)")
-
+        logger.debug("Starting from: \(folderURL.path)")
         onSetLoading?(true)
 
-        var audioURLs: [LibrarySyncResultItem] = []
-        let fm = FileManager.default
-        var visited: Set<URL> = []
-        var queue: [URL] = [folderURL]
+        let audioExtensions = ["mp3", "wav", "m4a", "flac", "aac"]
 
+        let resourceKeys: Set<URLResourceKey> = [
+            .isDirectoryKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
+        ]
+
+        let onFileURL = {
+            (fileURL: URL, onDir: ((_ url: URL) -> Void), onFile: ((_ url: URL) -> Void)) in
+            let logger = self.logger
+
+            logger.debug("Dequeued folder: \(fileURL.path)")
+            onCurrentURL?(fileURL)
+
+            let resourceValues = try fileURL.resourceValues(forKeys: resourceKeys)
+            logger.debug("got resource values")
+            if resourceValues.isDirectory == true {
+                onDir(fileURL)
+                return
+            }
+            let fileExtension = fileURL.pathExtension.lowercased()
+            if audioExtensions.contains(fileExtension) {
+                logger.debug(
+                    "Audio file found, adding to list: \(fileURL.lastPathComponent)")
+                onFile(fileURL)
+
+            }
+            logger.debug("done with: \(fileURL.path)")
+        }
+
+        var audioURLs: [LibrarySyncResultItem] = []
         var result = [String: LibrarySyncResultItem]()
 
-        guard folderURL.startAccessingSecurityScopedResource() else {
-            logger.debug("[BFS] Failed to access security-scoped resource.")
-            onSetLoading?(false)
-            return nil
-        }
-        defer {
-            logger.debug("[BFS] Stopping access to security-scoped resource.")
-            folderURL.stopAccessingSecurityScopedResource()
-        }
+        let fileManager = FileManager.default
+        do {
+          
+          let provider = CloudFileProvider(baseURL: folderURL)
+          var queue: [String] = []
+          var visited: Set<String> = []
+//          provider.contentsOfDirectory(path: )
+          queue.append(folderURL.absoluteString)
+          
+            let files = fileManager.enumerator(
+                at: folderURL, includingPropertiesForKeys: Array(resourceKeys),
+                options: [.skipsHiddenFiles])!
 
-        while !queue.isEmpty {
-            let current = queue.removeFirst().resolvingSymlinksInPath()
-            result[FileHelper(fileURL: current).toString()] = LibrarySyncResultItem(
-                rootURL: folderURL, current: current, isDirectory: true)
-
-            onCurrentURL?(current)
-            logger.debug("[BFS] Dequeued folder: \(current.path)")
-
-            guard !visited.contains(current) else {
-                logger.debug("[BFS] Already visited \(current.path), skipping...")
-                continue
-            }
-            visited.insert(current)
-
-            do {
-                let items = try fm.contentsOfDirectory(
-                    at: current,
-                    includingPropertiesForKeys: [
-                        .isDirectoryKey,
-                        .isSymbolicLinkKey,
-                        .ubiquitousItemDownloadingStatusKey,
-                    ],
-                    options: [.skipsHiddenFiles]
-                )
-                logger.debug("[BFS] Found \(items.count) items in \(current.lastPathComponent)")
-
-                for item in items {
-                    let rv = try item.resourceValues(forKeys: [
-                        .isDirectoryKey,
-                        .isSymbolicLinkKey,
-                        .ubiquitousItemDownloadingStatusKey,
-                    ])
-
-                    if rv.isSymbolicLink == true {
-                        logger.debug("[BFS] Skipping symbolic link: \(item.path)")
-                        continue
-                    }
-
-                    if rv.isDirectory == true {
-                        if let status = rv.ubiquitousItemDownloadingStatus, status == .notDownloaded
-                        {
-                            do {
-                                logger.debug(
-                                    "[BFS] Subfolder not downloaded, requesting download: \(item.lastPathComponent)"
-                                )
-                                try fm.startDownloadingUbiquitousItem(at: item)
-                                // We'll skip adding to BFS queue until it’s downloaded
-                               try await waitForFolderDownloadIfNeeded(item)
-
-                            } catch {
-                                logger.debug(
-                                    "[BFS] Error requesting iCloud subfolder download: \(error)")
-                            }
+          while !queue.isEmpty {
+//            for case let fileURL as URL in files {
+            let current = queue.removeFirst()
+            let fileURL = URL(string: current)!
+            
+                        guard !visited.contains(current) else {
+                            logger.debug("[BFS] Already visited \(current), skipping...")
                             continue
                         }
-                        logger.debug(
-                            "[BFS] Subfolder found, adding to queue: \(item.lastPathComponent)")
-                        queue.append(item)
-                    } else {
-                        let ext = item.pathExtension.lowercased()
-                        if ["mp3", "m4a", "aiff"].contains(ext) {
-                            logger.debug(
-                                "[BFS] Audio file found, adding to list: \(item.lastPathComponent)")
-                            let resultItem = LibrarySyncResultItem(
-                                rootURL: folderURL, current: item, isDirectory: false)
-                            audioURLs.append(resultItem)
-                            result[FileHelper(fileURL: item).toString()] = resultItem
+                        visited.insert(current)
+            
+            result[FileHelper(fileURL: fileURL).toString()] = LibrarySyncResultItem(
+                rootURL: folderURL, current: fileURL, isDirectory: true)
+            logger.debug("done with: \(fileURL.path)")
+            
+            let items: [FileObject] = try await withCheckedThrowingContinuation { continuation in
+              provider.contentsOfDirectory(path: "/") { contents, error in
+                        if let error = error {
+                            continuation.resume(throwing: error)
+                        }  else {
+                          continuation.resume(returning: contents)
                         }
                     }
                 }
-            } catch {
-                logger.error(
-                    "[BFS] Error reading directory \(current.path): \(error.localizedDescription)")
+            for  item in items {
+              let fileURL = URL(string: item.path)!
+            
+            
+                try onFileURL(
+                    fileURL,
+                    { fileURL in
+                      queue.append(fileURL.absoluteString)
+                    },
+                    { fileURL in
+                        let resultItem = LibrarySyncResultItem(
+                            rootURL: folderURL, current: fileURL, isDirectory: false)
+                        audioURLs.append(resultItem)
+                        result[FileHelper(fileURL: fileURL).toString()] = resultItem
+                    })
+              
             }
+            }
+        } catch {
+            print("Error: \(error.localizedDescription)")
         }
-        logger.debug("[BFS] BFS complete. Total audio files found: \(audioURLs.count)")
+
+        logger.debug("Total audio files found: \(audioURLs.count)")
         onSetLoading?(false)
 
         return LibrarySyncResult(
             allItems: Array(result.values), audioFiles: audioURLs, totalAudioFiles: audioURLs.count)
-    }
-    
-    private var folderDownloadContinuation: CheckedContinuation<Void, Error>?
-        
-        /// Call this from somewhere in your code, for example:
-        /// try await myActor.waitForFolderDownloadIfNeeded(folderURL)
-        func waitForFolderDownloadIfNeeded(_ folderURL: URL) async throws {
-            try await withCheckedThrowingContinuation { continuation in
-                self.folderDownloadContinuation = continuation
-                
-                // Set up a normal class to handle the metadata query
-                let observer = iCloudFolderDownloadObserver(folderURL: folderURL, actorRef: self)
-                observer.startQuery()
-            }
-        }
-        
-        /// Called from the observer once everything is downloaded.
-        func notifyAllItemsDownloaded() {
-            folderDownloadContinuation?.resume(returning: ())
-            folderDownloadContinuation = nil
-        }
-    
-}
 
-
-/// A normal class that manages NSMetadataQuery and handles notifications.
-/// Nothing here is isolated, so it can safely use @objc methods and store
-/// non-Sendable types like NSMetadataQuery.
-class iCloudFolderDownloadObserver: NSObject {
-    private let folderURL: URL
-    private unowned let actorRef: DefaultLibrarySyncService
-    private let query = NSMetadataQuery()
-    
-    init(folderURL: URL, actorRef: DefaultLibrarySyncService) {
-        self.folderURL = folderURL
-        self.actorRef = actorRef
-        super.init()
-        
-        // We observe the query’s notifications directly.
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(onQueryDidUpdate(_:)),
-            name: .NSMetadataQueryDidUpdate,
-            object: query
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(onQueryDidFinish(_:)),
-            name: .NSMetadataQueryDidFinishGathering,
-            object: query
-        )
-    }
-    
-    /// Starts the iCloud Metadata Query
-    func startQuery() {
-        query.searchScopes = [NSMetadataQueryUbiquitousDocumentsScope]
-        query.predicate = NSPredicate(
-            format: "%K BEGINSWITH %@",
-            NSMetadataItemPathKey,
-            folderURL.path
-        )
-        query.start()
-    }
-    
-    /// Fired repeatedly when the query updates
-    @objc private func onQueryDidUpdate(_ notification: Notification) {
-        checkAllItemsDownloaded()
-    }
-    
-    /// Fired once when the query finishes its initial gathering
-    @objc private func onQueryDidFinish(_ notification: Notification) {
-        query.disableUpdates()
-        checkAllItemsDownloaded()
-        query.enableUpdates()
-    }
-    
-    /// Checks if all items in the query are downloaded. If they are, we stop the query and inform the actor.
-    private func checkAllItemsDownloaded() {
-        var allDownloaded = true
-        
-        for case let item as NSMetadataItem in query.results {
-            if let status = item.value(forAttribute: NSMetadataUbiquitousItemDownloadingStatusKey) as? String,
-               status != NSMetadataUbiquitousItemDownloadingStatusCurrent
-            {
-                allDownloaded = false
-                // Attempt to start downloading the file if it isn't downloaded
-                if let itemURL = item.value(forAttribute: NSMetadataItemURLKey) as? URL {
-                    do {
-                        try FileManager.default.startDownloadingUbiquitousItem(at: itemURL)
-                    } catch {
-                        // handle or log the error
-                    }
-                }
-            }
-        }
-        
-        if allDownloaded {
-            // Stop observing now that we are done
-            query.stop()
-            NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidUpdate, object: query)
-            NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidFinishGathering, object: query)
-            
-            // Notify actor: no non-Sendable data is passed, so no concurrency warnings
-            Task {
-                await actorRef.notifyAllItemsDownloaded()
-            }
-        }
+        //
+        //        while !queue.isEmpty {
+        //            let current = queue.removeFirst().resolvingSymlinksInPath()
+        //            result[FileHelper(fileURL: current).toString()] = LibrarySyncResultItem(
+        //                rootURL: folderURL, current: current, isDirectory: true)
+        //
+        //            onCurrentURL?(current)
+        //            logger.debug("[BFS] Dequeued folder: \(current.path)")
+        //
+        //            guard !visited.contains(current) else {
+        //                logger.debug("[BFS] Already visited \(current.path), skipping...")
+        //                continue
+        //            }
+        //            visited.insert(current)
+        //
+        //            do {
+        //                let items = try fm.contentsOfDirectory(
+        //                    at: current,
+        //                    includingPropertiesForKeys: [
+        //                        .isDirectoryKey,
+        //                        .isSymbolicLinkKey,
+        //                        .ubiquitousItemDownloadingStatusKey,
+        //                    ],
+        //                    options: [.skipsHiddenFiles]
+        //                )
+        //                logger.debug("[BFS] Found \(items.count) items in \(current.lastPathComponent)")
+        //
+        //                for item in items {
+        //                    let rv = try item.resourceValues(forKeys: [
+        //                        .isDirectoryKey,
+        //                        .isSymbolicLinkKey,
+        //                        .ubiquitousItemDownloadingStatusKey,
+        //                    ])
+        //
+        //                    if rv.isSymbolicLink == true {
+        //                        logger.debug("[BFS] Skipping symbolic link: \(item.path)")
+        //                        continue
+        //                    }
+        //
+        //                    if rv.isDirectory == true {
+        //                        if let status = rv.ubiquitousItemDownloadingStatus, status == .notDownloaded
+        //                        {
+        //                            do {
+        //                                logger.debug(
+        //                                    "[BFS] Subfolder not downloaded, requesting download: \(item.lastPathComponent)"
+        //                                )
+        //                                try fm.startDownloadingUbiquitousItem(at: item)
+        //                                // We'll skip adding to BFS queue until it’s downloaded
+        //                               try await waitForFolderDownloadIfNeeded(item)
+        //
+        //                            } catch {
+        //                                logger.debug(
+        //                                    "[BFS] Error requesting iCloud subfolder download: \(error)")
+        //                            }
+        //                            continue
+        //                        }
+        //                        logger.debug(
+        //                            "[BFS] Subfolder found, adding to queue: \(item.lastPathComponent)")
+        //                        queue.append(item)
+        //                    } else {
+        //                        let ext = item.pathExtension.lowercased()
+        //                        if ["mp3", "m4a", "aiff"].contains(ext) {
+        //                            logger.debug(
+        //                                "[BFS] Audio file found, adding to list: \(item.lastPathComponent)")
+        //                            let resultItem = LibrarySyncResultItem(
+        //                                rootURL: folderURL, current: item, isDirectory: false)
+        //                            audioURLs.append(resultItem)
+        //                            result[FileHelper(fileURL: item).toString()] = resultItem
+        //                        }
+        //                    }
+        //                }
+        //            } catch {
+        //                logger.error(
+        //                    "[BFS] Error reading directory \(current.path): \(error.localizedDescription)")
+        //            }
+        //        }
+        //        logger.debug("[BFS] BFS complete. Total audio files found: \(audioURLs.count)")
+        //        onSetLoading?(false)
+        //
+        //        return LibrarySyncResult(
+        //            allItems: Array(result.values), audioFiles: audioURLs, totalAudioFiles: audioURLs.count)
     }
 }
-
 
 // models
 struct User: Sendable {

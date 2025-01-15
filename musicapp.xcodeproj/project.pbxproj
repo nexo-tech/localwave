@@ -7,8 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		103CBBE92D331D7D00F3CEDF /* libsqlite3.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = 103CBBE82D331D7D00F3CEDF /* libsqlite3.tbd */; };
 		103CBBEB2D331DDA00F3CEDF /* SQLite in Frameworks */ = {isa = PBXBuildFile; productRef = 103CBBEA2D331DDA00F3CEDF /* SQLite */; };
+		1069D9272D3720B200D758BA /* FilesProvider in Frameworks */ = {isa = PBXBuildFile; productRef = 1069D9262D3720B200D758BA /* FilesProvider */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,8 +59,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				1069D9272D3720B200D758BA /* FilesProvider in Frameworks */,
 				103CBBEB2D331DDA00F3CEDF /* SQLite in Frameworks */,
-				103CBBE92D331D7D00F3CEDF /* libsqlite3.tbd in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -133,6 +133,7 @@
 			name = musicapp;
 			packageProductDependencies = (
 				103CBBEA2D331DDA00F3CEDF /* SQLite */,
+				1069D9262D3720B200D758BA /* FilesProvider */,
 			);
 			productName = musicapp;
 			productReference = 10811E6F2D31CF01008CAD75 /* musicapp.app */;
@@ -218,6 +219,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				10FA3CCA2D32887D00E25072 /* XCRemoteSwiftPackageReference "SQLite" */,
+				1069D9252D37209800D758BA /* XCRemoteSwiftPackageReference "FileProvider" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 10811E702D31CF01008CAD75 /* Products */;
@@ -596,6 +598,14 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
+		1069D9252D37209800D758BA /* XCRemoteSwiftPackageReference "FileProvider" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/amosavian/FileProvider.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.26.0;
+			};
+		};
 		10FA3CCA2D32887D00E25072 /* XCRemoteSwiftPackageReference "SQLite" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/stephencelis/SQLite.swift";
@@ -616,6 +626,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 10FA3CCA2D32887D00E25072 /* XCRemoteSwiftPackageReference "SQLite" */;
 			productName = SQLite;
+		};
+		1069D9262D3720B200D758BA /* FilesProvider */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 1069D9252D37209800D758BA /* XCRemoteSwiftPackageReference "FileProvider" */;
+			productName = FilesProvider;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
