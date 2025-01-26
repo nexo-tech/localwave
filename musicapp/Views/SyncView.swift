@@ -1,6 +1,155 @@
 import SwiftUI
 import os
+@MainActor
+class LibraryBrowseViewModel: ObservableObject {
+    private let service: LibraryImportService
+    private let libraryId: Int64
+    
+    /// A stack of visited parentPathIds; the last element is the "current folder."
+    @Published private var pathStack: [Int64?] = [nil]
 
+    @Published var items: [LibraryPath] = []
+    @Published var searchTerm: String = ""
+    
+    /// For checkboxes on any item (folders or files).
+    @Published var selectedPathIds = Set<Int64>()
+
+    /// The current parent path we’re displaying.
+    var parentPathId: Int64? {
+        pathStack.last ?? nil
+    }
+
+    /// Whether we can go back one level.
+    var canGoBack: Bool {
+        pathStack.count > 1
+    }
+
+    init(service: LibraryImportService, libraryId: Int64, initialParentPathId: Int64? = nil) {
+        self.service = service
+        self.libraryId = libraryId
+        if let initialParent = initialParentPathId {
+            pathStack = [nil, initialParent]
+        }
+    }
+
+    func loadItems() async {
+        do {
+            if searchTerm.isEmpty {
+                items = try await service.listItems(libraryId: libraryId, parentPathId: parentPathId)
+            } else {
+                items = try await service.search(libraryId: libraryId, query: searchTerm)
+            }
+        } catch {
+            print("Load items error: \(error)")
+        }
+    }
+
+    /// Navigate into a subfolder (push on stack).
+    func goIntoFolder(with pathId: Int64) {
+        pathStack.append(pathId)
+        searchTerm = ""
+        Task { await loadItems() }
+    }
+
+    /// Go up one level (pop from stack).
+    func goBack() {
+        guard canGoBack else { return }
+        pathStack.removeLast()
+        searchTerm = ""
+        Task { await loadItems() }
+    }
+
+    /// Toggle selection for a path (folder or file).
+    func toggleSelection(_ pathId: Int64) {
+        if selectedPathIds.contains(pathId) {
+            selectedPathIds.remove(pathId)
+        } else {
+            selectedPathIds.insert(pathId)
+        }
+    }
+}
+struct LibraryBrowseView: View {
+    @StateObject var viewModel: LibraryBrowseViewModel
+
+    init(libraryId: Int64,
+         parentPathId: Int64? = nil,
+         libraryImportService: LibraryImportService) {
+        _viewModel = StateObject(
+            wrappedValue: LibraryBrowseViewModel(
+                service: libraryImportService,
+                libraryId: libraryId,
+                initialParentPathId: parentPathId
+            )
+        )
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack {
+                // Top bar with optional "Back" button
+                HStack {
+                    if viewModel.canGoBack {
+                        Button("Back") {
+                            viewModel.goBack()
+                        }
+                        .padding(.leading)
+                    }
+                    Spacer()
+                }
+                
+                // Search bar
+                TextField("Search...", text: $viewModel.searchTerm)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(.horizontal)
+                    .onSubmit {
+                        Task { await viewModel.loadItems() }
+                    }
+
+                // File/Folder list
+                List(viewModel.items, id: \.pathId) { item in
+                    HStack {
+                        // Icon: folder or doc
+                        Image(systemName: item.isDirectory ? "folder.fill" : "doc.fill")
+                            .foregroundColor(item.isDirectory ? .blue : .gray)
+
+                        // Name + relative path
+                        VStack(alignment: .leading) {
+                            Text(item.name)
+                                .fontWeight(.medium)
+                            Text(item.relativePath)
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                                .lineLimit(1)
+                        }
+
+                        Spacer()
+
+                        // Checkboxes on everything (folder or file)
+                        Button {
+                            viewModel.toggleSelection(item.pathId)
+                        } label: {
+                            Image(systemName: viewModel.selectedPathIds.contains(item.pathId)
+                                  ? "checkmark.square"
+                                  : "square")
+                        }
+                        .buttonStyle(BorderlessButtonStyle())
+                    }
+                    .contentShape(Rectangle()) // Entire row is tappable
+                    .onTapGesture {
+                        if item.isDirectory {
+                            viewModel.goIntoFolder(with: item.pathId)
+                        }
+                    }
+                }
+                .listStyle(.plain)
+            }
+            .navigationTitle("Library Browser")
+        }
+        .onAppear {
+            Task { await viewModel.loadItems() }
+        }
+    }
+}
 struct SelectFolderView: View {
     var onAction: (() -> Void)?
     var title: String = "Load your directory"
@@ -134,7 +283,6 @@ struct SyncView: View {
                     Button("Sync now") {
                         syncViewModel.sync()
                     }
-
                     Button("resync") {
                         logger.debug("attempting to click")
                         isPickingFolder = true
@@ -160,6 +308,15 @@ struct SyncView: View {
                         default:
                             logger.debug("couldn't get url")
                         }
+                    }
+                    if let library = syncViewModel.currentLibrary,
+                        let ls = syncViewModel.libraryService
+                    {
+                        let libraryId = library.id
+                        let parentPathId = hashStringToInt64(library.dirPath)
+                        LibraryBrowseView(
+                            libraryId: libraryId!, parentPathId: parentPathId,
+                            libraryImportService: ls.importService())
                     }
                 }
             case .syncInProgress:
@@ -203,7 +360,7 @@ class SyncViewModel: ObservableObject {
 
     private let userCloudService: UserCloudService?
     private let icloudProvider: ICloudProvider?
-    private let libraryService: LibraryService?
+    let libraryService: LibraryService?
 
     init(
         userCloudService: UserCloudService?,
@@ -333,6 +490,9 @@ class SyncViewModel: ObservableObject {
                     self.currentLibrary = try await libraryService?.getCurrentLibrary(
                         userId: user.id!)
                     self.selectedFolderName = self.currentLibrary?.dirPath
+                    let id = self.currentLibrary?.id ?? -1
+                    let path = self.currentLibrary?.dirPath ?? ""
+                    logger.debug("library \(id), path: \(path)")
                 }
             } catch {
                 self.errorMessage = error.localizedDescription

@@ -1,4 +1,4 @@
-import FilesProvider
+import AVFoundation
 import SQLite
 import UIKit
 import os
@@ -53,6 +53,48 @@ struct LibraryPath: Sendable {
 
     let createdAt: Date
     let updatedAt: Date?
+}
+
+/// Example song model, no libraryId. We store all metadata ourselves.
+struct Song: Sendable {
+    let id: Int64?
+
+    /// A unique-ish hash of (artist, title, album).
+    let songKey: Int64
+
+    let artist: String
+    let title: String
+    let album: String
+
+    /// e.g. "cover-XYZ.jpg" or nil if none
+    let coverArtPath: String?
+
+    /// Security-scoped bookmark for the actual file
+    let bookmark: Data?
+
+    /// Timestamps
+    let createdAt: Date
+    let updatedAt: Date?
+
+    func copyWith(id: Int64?) -> Song {
+        Song(
+            id: id,
+            songKey: songKey,
+            artist: artist,
+            title: title,
+            album: album,
+            coverArtPath: coverArtPath,
+            bookmark: bookmark,
+            createdAt: createdAt,
+            updatedAt: updatedAt
+        )
+    }
+}
+
+func generateSongKey(artist: String, title: String, album: String) -> Int64 {
+    // Normalize or lowercased if you like
+    let combined = "\(artist.lowercased())__\(title.lowercased())__\(album.lowercased())"
+    return hashStringToInt64(combined)  // Using your existing FNV approach
 }
 
 func setupSQLiteConnection(dbName: String) -> Connection? {
@@ -128,12 +170,25 @@ struct LibrarySyncResultItem {
     }
 }
 
+protocol SongRepository {
+    /// Upsert a song based on its songKey (hash of artist/title/album).
+    /// If a row with the same key exists, update it; otherwise insert new.
+    func upsertSong(_ song: Song) async throws -> Song
+
+    /// Full-text search by artist/title/album, returning at most `limit` songs,
+    /// ordered by `bm25(...)`.
+    func searchSongsFTS(query: String, limit: Int) async throws -> [Song]
+}
+
+protocol LibraryImportService {
+    func listItems(libraryId: Int64, parentPathId: Int64?) async throws -> [LibraryPath]
+    func search(libraryId: Int64, query: String) async throws -> [LibraryPath]
+}
+
 protocol LibraryPathSearchRepository {
-    func insertIntoFTS(path: LibraryPath) async throws
-    func batchInsertIntoFTS(paths: [LibraryPath]) async throws
-    func search(query: String, limit: Int) async throws -> [PathSearchResult]
-    func deleteFTS(pathId: Int64) async throws
-    func batchDeleteFTS(pathIds: [Int64]) async throws
+    func batchUpsertIntoFTS(paths: [LibraryPath]) async throws
+    func search(libraryId: Int64, query: String, limit: Int) async throws -> [PathSearchResult]
+    func batchDeleteFTS(libraryId: Int64, excludingRunId: Int64) async throws
 }
 
 protocol LibrarySyncService {
@@ -177,18 +232,254 @@ struct FileHelper {
     }
 }
 
+actor SongImporter {
+    let logger = Logger(subsystem: subsystem, category: "SongImporter")
+
+    private let songRepo: SongRepository
+    private let libraryPathRepo: LibraryPathRepository
+
+    init(songRepo: SongRepository, libraryPathRepo: LibraryPathRepository) {
+        self.songRepo = songRepo
+        self.libraryPathRepo = libraryPathRepo
+    }
+
+    /// Import all paths from a list of [LibraryPath].
+    /// If a path is a directory, we gather all descendants recursively.
+    func importPaths(paths: [LibraryPath]) async throws {
+        // Step 1: gather all actual files
+        let filePaths = try await gatherAllFiles(paths: paths)
+
+        // Step 2: parse each file, create Song, upsert into DB
+        for filePath in filePaths {
+            // Reconstruct local URL from the LibraryPath
+            // For example, if you have a "root" or "dirPath" somewhere, do:
+            // let baseURL = URL(fileURLWithPath: someLibraryRootPath, isDirectory: true)
+            // let fileURL = baseURL.appendingPathComponent(filePath.relativePath)
+            //
+            // For now, let's assume you have a method that can give you the real URL for that library path:
+            guard let fileURL = resolveFileURL(for: filePath) else {
+                continue
+            }
+
+            // Use AVFoundation to read metadata
+            let (artist, title, album) = await readMetadataAVAsset(url: fileURL)
+            let songKey = generateSongKey(artist: artist, title: title, album: album)
+
+            // Create a security-scoped bookmark
+            let bookmarkData = try createBookmark(for: fileURL)
+
+            // Optionally store cover art on disk if you want
+            // let coverPath = storeCoverArtOnDisk(...)
+
+            // Upsert
+            let newSong = Song(
+                id: nil,
+                songKey: songKey,
+                artist: artist,
+                title: title,
+                album: album,
+                coverArtPath: nil,  // or coverPath if you do cover art
+                bookmark: bookmarkData,
+                createdAt: Date(),
+                updatedAt: nil
+            )
+            let song = try await songRepo.upsertSong(newSong)
+            logger.debug("upserted song: \(song.title)")
+        }
+    }
+
+    // MARK: - Recursively gather all file paths
+    private func gatherAllFiles(paths: [LibraryPath]) async throws -> [LibraryPath] {
+        var result = [LibraryPath]()
+        for p in paths {
+            if p.isDirectory {
+                // gather children from libraryPathRepo
+                let children = try await libraryPathRepo.getByParentId(
+                    libraryId: p.libraryId,
+                    parentPathId: p.pathId
+                )
+                // recursively gather
+                let sub = try await gatherAllFiles(paths: children)
+                result.append(contentsOf: sub)
+            } else {
+                result.append(p)
+            }
+        }
+        return result
+    }
+
+    // MARK: - Avfoundation-based metadata reading
+    @available(iOS 16.0, *)
+    func readMetadataAVAsset(url: URL) async -> (artist: String, title: String, album: String) {
+        let asset = AVURLAsset(url: url)
+
+        // In iOS 16+, we load metadata asynchronously
+        // This replaces the old 'commonMetadata' property
+        let metadataItems: [AVMetadataItem]
+        do {
+            metadataItems = try await asset.load(.metadata)
+        } catch {
+            // If loading fails for some reason, return empty strings
+            print("Failed to load metadata: \(error)")
+            return ("", "", "")
+        }
+
+        var artist = ""
+        var title = ""
+        var album = ""
+
+        // We iterate through metadata items, checking their commonKey
+        for item in metadataItems {
+            // 'commonKey' is also asynchronously loaded in iOS 16.0+
+            guard let commonKey = item.commonKey else { continue }
+
+            switch commonKey {
+            case .commonKeyArtist:
+                // load the stringValue asynchronously
+                if let val = try? await item.load(.stringValue) {
+                    artist = val
+                }
+            case .commonKeyTitle:
+                if let val = try? await item.load(.stringValue) {
+                    title = val
+                }
+            case .commonKeyAlbumName:
+                if let val = try? await item.load(.stringValue) {
+                    album = val
+                }
+            default:
+                break
+            }
+        }
+
+        return (artist, title, album)
+    }
+
+    // MARK: - Create a bookmark
+    private func createBookmark(for fileURL: URL) throws -> Data {
+        let data = try fileURL.bookmarkData(
+            options: [],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        return data
+    }
+
+    /// Resolves the absolute file URL from a Library + LibraryPath.
+    /// Assumes `library.dirPath` is the root folder's path on disk.
+    /// Then appends `LibraryPath.relativePath`.
+    private func resolveFileURL(for p: LibraryPath) -> URL? {
+        // Example: you combine your app's Documents directory with p.relativePath
+        guard
+            let documentsDir = FileManager.default.urls(
+                for: .documentDirectory, in: .userDomainMask
+            ).first
+        else {
+            return nil
+        }
+
+        // Suppose relativePath is something like "audio/someSong.mp3".
+        // Then final path is Documents/audio/someSong.mp3
+        let fileURL = documentsDir.appendingPathComponent(p.relativePath)
+        return fileURL
+    }
+
+    // MARK: - Store cover art in Documents/CoverArt
+    private func storeCoverArtOnDisk(_ data: Data) -> String? {
+        do {
+            // 1) Get Documents
+            guard
+                let documentsDir = FileManager.default.urls(
+                    for: .documentDirectory, in: .userDomainMask
+                ).first
+            else {
+                return nil
+            }
+
+            // 2) Create a subfolder “CoverArt” if it doesn’t exist
+            let coverArtDir = documentsDir.appendingPathComponent("CoverArt", isDirectory: true)
+            if !FileManager.default.fileExists(atPath: coverArtDir.path) {
+                try FileManager.default.createDirectory(
+                    at: coverArtDir, withIntermediateDirectories: true)
+            }
+
+            // 3) Make a unique filename
+            let filename = "cover-\(UUID().uuidString).jpg"
+            let fileURL = coverArtDir.appendingPathComponent(filename)
+
+            // 4) Write data
+            try data.write(to: fileURL)
+
+            // 5) Return the relative path or just the filename
+            // E.g., "CoverArt/cover-xxxx.jpg"
+            let relativeCoverPath = "CoverArt/\(filename)"
+            return relativeCoverPath
+
+        } catch {
+            print("Could not store cover art: \(error)")
+            return nil
+        }
+    }
+}
+
+actor DefaultLibraryImportService: LibraryImportService {
+    let logger = Logger(subsystem: subsystem, category: "LibraryImportService")
+    func listItems(libraryId: Int64, parentPathId: Int64?) async throws -> [LibraryPath] {
+        logger.debug("attempting to list for libID : \(libraryId), parent: \(parentPathId ?? -1)")
+        let all = try await libraryPathRepository.getByParentId(
+            libraryId: libraryId, parentPathId: parentPathId)
+
+        logger.debug("got : \(all.count) items")
+
+        return all
+    }
+
+    func search(libraryId: Int64, query: String) async throws -> [LibraryPath] {
+        let results = try await libraryPathSearchRepository.search(
+            libraryId: libraryId,
+            query: query,
+            limit: 100  // or whatever you like
+        )
+
+        // Retrieve the actual LibraryPath records for each matching pathId
+        var paths = [LibraryPath]()
+        for r in results {
+            if let p = try await libraryPathRepository.getByPathId(
+                libraryId: libraryId, pathId: r.pathId)
+            {
+                paths.append(p)
+            }
+        }
+        return paths
+    }
+
+    private let libraryPathRepository: LibraryPathRepository
+    private let libraryPathSearchRepository: LibraryPathSearchRepository
+
+    init(
+        libraryPathRepository: LibraryPathRepository,
+        libraryPathSearchRepository: LibraryPathSearchRepository
+    ) {
+        self.libraryPathRepository = libraryPathRepository
+        self.libraryPathSearchRepository = libraryPathSearchRepository
+    }
+
+}
 actor DefaultLibrarySyncService: LibrarySyncService {
     let logger = Logger(subsystem: subsystem, category: "LibrarySyncService")
 
     let libraryRepository: LibraryRepository
     let libraryPathRepository: LibraryPathRepository
+    let libraryPathSearchRepository: LibraryPathSearchRepository
 
     init(
         libraryRepository: LibraryRepository,
+        libraryPathSearchRepository: LibraryPathSearchRepository,
         libraryPathRepository: LibraryPathRepository
     ) {
         self.libraryRepository = libraryRepository
         self.libraryPathRepository = libraryPathRepository
+        self.libraryPathSearchRepository = libraryPathSearchRepository
     }
 
     func syncDir(
@@ -231,11 +522,13 @@ actor DefaultLibrarySyncService: LibrarySyncService {
 
             logger.debug("upserting \(numberOfItemsToUpsert) items")
             try await libraryPathRepository.batchUpsert(paths: items)
+            try await libraryPathSearchRepository.batchUpsertIntoFTS(paths: items)
 
             logger.debug("removing stale paths...")
             let deletedCount = try await libraryPathRepository.deleteMany(
                 libraryId: libraryId, excludingRunId: runId)
-
+            try await libraryPathSearchRepository.batchDeleteFTS(
+                libraryId: libraryId, excludingRunId: runId)
             logger.debug("removed \(deletedCount) stale paths")
 
             if let result = result {
@@ -351,10 +644,15 @@ protocol LibraryService {
     func registerLibraryPath(userId: Int64, path: String) async throws -> Library
     func getCurrentLibrary(userId: Int64) async throws -> Library?
     func syncService() -> LibrarySyncService
+    func importService() -> LibraryImportService
     func repository() -> LibraryRepository
 }
 
 class DefaultLibraryService: LibraryService {
+    func importService() -> any LibraryImportService {
+        return libraryImportService
+    }
+
     let logger = Logger(subsystem: subsystem, category: "LibraryService")
     func repository() -> LibraryRepository {
         return libraryRepo
@@ -398,16 +696,23 @@ class DefaultLibraryService: LibraryService {
         return librarySyncService
     }
     private var libraryRepo: LibraryRepository
+    private var libraryImportService: LibraryImportService
     private var librarySyncService: LibrarySyncService
 
-    init(libraryRepo: LibraryRepository, librarySyncService: LibrarySyncService) {
+    init(
+        libraryRepo: LibraryRepository, librarySyncService: LibrarySyncService,
+        libraryImportService: LibraryImportService
+    ) {
         self.libraryRepo = libraryRepo
         self.librarySyncService = librarySyncService
+        self.libraryImportService = libraryImportService
     }
 
 }
 
 protocol LibraryPathRepository {
+    func getByParentId(libraryId: Int64, parentPathId: Int64?) async throws -> [LibraryPath]
+    func getByPathId(libraryId: Int64, pathId: Int64) async throws -> LibraryPath?
     func create(path: LibraryPath) async throws -> LibraryPath
     func updateFileHash(pathId: Int64, fileHash: Data?) async throws
     func deleteMany(libraryId: Int64) async throws
@@ -416,6 +721,7 @@ protocol LibraryPathRepository {
     func batchUpsert(paths: [LibraryPath]) async throws
     func deleteMany(libraryId: Int64, excludingRunId: Int64) async throws -> Int
 }
+
 protocol LibraryRepository {
     func create(library: Library) async throws -> Library
     func findOneByUserId(userId: Int64, path: String?) async throws -> [Library]
@@ -738,6 +1044,52 @@ actor SQLiteLibraryPathRepository: LibraryPathRepository {
 
     private let logger = Logger(subsystem: subsystem, category: "SQLiteLibraryPathRepository")
 
+    func getByPathId(libraryId: Int64, pathId: Int64) async throws -> LibraryPath? {
+        let query = table.filter(colLibraryId == libraryId && colPathId == pathId)
+        if let row = try db.pluck(query) {
+            return LibraryPath(
+                id: row[colId],
+                libraryId: row[colLibraryId],
+                pathId: row[colPathId],
+                parentPathId: row[colParentPathId],
+                name: row[colName],
+                relativePath: row[colRelativePath],
+                isDirectory: row[colIsDirectory],
+                fileHashSHA256: row[colFileHashSHA256],
+                runId: row[colRunId],
+                createdAt: row[colCreatedAt],
+                updatedAt: row[colUpdatedAt]
+            )
+        }
+        return nil
+    }
+
+    func getByParentId(libraryId: Int64, parentPathId: Int64?) async throws -> [LibraryPath] {
+        let rows: AnySequence<Row>
+        if let parentId = parentPathId {
+            let query = table.filter(colLibraryId == libraryId && colParentPathId == parentId)
+            rows = try db.prepare(query)
+        } else {
+            let query = table.filter(colLibraryId == libraryId)  // && colParentPathId == nil)
+            //            let query = table.filter(colLibraryId == libraryId && colParentPathId == nil)
+            rows = try db.prepare(query)
+        }
+        return rows.map { row in
+            LibraryPath(
+                id: row[colId],
+                libraryId: row[colLibraryId],
+                pathId: row[colPathId],
+                parentPathId: row[colParentPathId],
+                name: row[colName],
+                relativePath: row[colRelativePath],
+                isDirectory: row[colIsDirectory],
+                fileHashSHA256: row[colFileHashSHA256],
+                runId: row[colRunId],
+                createdAt: row[colCreatedAt],
+                updatedAt: row[colUpdatedAt]
+            )
+        }
+    }
     // MARK: - Initializer
     init(db: Connection) throws {
         let colId = SQLite.Expression<Int64>("id")
@@ -930,31 +1282,80 @@ extension LibraryPath {
 }
 
 actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
-    func insertIntoFTS(path: LibraryPath) async throws {
+    func search(libraryId: Int64, query: String, limit: Int) async throws -> [PathSearchResult] {
+        let matchString = query
 
+        let sql = """
+            SELECT pathId, bm25(library_paths_fts) AS rank
+            FROM library_paths_fts
+            WHERE library_paths_fts MATCH ?
+                AND libraryId = ?
+            ORDER BY rank
+            LIMIT ?;
+            """
+
+        var results: [PathSearchResult] = []
+        for row in try db.prepare(sql, matchString, libraryId, limit) {
+            let pathId = row[0] as? Int64 ?? 0
+            let rank = row[1] as? Double ?? 0.0
+            results.append(PathSearchResult(pathId: pathId, rank: rank))
+        }
+        return results
     }
 
-    func batchInsertIntoFTS(paths: [LibraryPath]) async throws {
-
+    // MARK: - Batch Delete by libraryId, excluding runId
+    func batchDeleteFTS(libraryId: Int64, excludingRunId: Int64) async throws {
+        // Delete all rows with this libraryId where runId != excludingRunId
+        let query = ftsTable.filter(
+            colFtsLibraryId == libraryId && colFtsRunId != excludingRunId
+        )
+        try db.transaction {
+            try db.run(query.delete())
+        }
     }
 
-    func search(query: String, limit: Int) async throws -> [PathSearchResult] {
+    // MARK: - Batch Upsert
+    /// If `(libraryId, pathId)` already exists, we update `runId`, `fullPath`, `fileName`.
+    /// Otherwise, we insert a new row.
+    func batchUpsertIntoFTS(paths: [LibraryPath]) async throws {
+        guard !paths.isEmpty else { return }
 
+        try db.transaction {
+            for path in paths {
+                let existingQuery = self.ftsTable.filter(
+                    self.colFtsPathId == path.pathId && self.colFtsLibraryId == path.libraryId
+                )
+                if try db.pluck(existingQuery) != nil {
+                    // Update
+                    try db.run(
+                        existingQuery.update(
+                            self.colFtsRunId <- path.runId,
+                            self.colFtsFullPath <- path.relativePath,
+                            self.colFtsFileName <- path.name
+                        )
+                    )
+                } else {
+                    // Insert
+                    try db.run(
+                        self.ftsTable.insert(
+                            self.colFtsPathId <- path.pathId,
+                            self.colFtsLibraryId <- path.libraryId,
+                            self.colFtsRunId <- path.runId,
+                            self.colFtsFullPath <- path.relativePath,
+                            self.colFtsFileName <- path.name
+                        )
+                    )
+                }
+            }
+        }
     }
-
-    func deleteFTS(pathId: Int64) async throws {
-
-    }
-
-    func batchDeleteFTS(pathIds: [Int64]) async throws {
-
-    }
-
     private let db: Connection
     private let ftsTable = Table("library_paths_fts")
     private let colFtsPathId = SQLite.Expression<Int64>("pathId")
-    private let colFtsFullPath = SQLite.Expression<Int64>("fullPath")
-    private let colFtsFileName = SQLite.Expression<Int64>("fileName")
+    private let colFtsLibraryId = SQLite.Expression<Int64>("libraryId")
+    private let colFtsRunId = SQLite.Expression<Int64>("runId")
+    private let colFtsFullPath = SQLite.Expression<String>("fullPath")
+    private let colFtsFileName = SQLite.Expression<String>("fileName")
 
     init(db: Connection) throws {
         self.db = db
@@ -963,6 +1364,8 @@ actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
             CREATE VIRTUAL TABLE IF NOT EXISTS library_paths_fts
             USING fts5(
                 pathId UNINDEXED,
+                libraryId UNINDEXED,
+                runId UNINDEXED,
                 fullPath,
                 fileName,
                 tokenize='porter'
@@ -970,4 +1373,209 @@ actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
             """)
     }
 
+}
+
+actor SQLiteSongRepository: SongRepository {
+    private let db: Connection
+
+    // MARK: - Main "songs" table
+    private let songsTable = Table("songs")
+
+    // Typed columns
+    private let colId: SQLite.Expression<Int64>
+    private let colSongKey: SQLite.Expression<Int64>
+    private let colArtist: SQLite.Expression<String>
+    private let colTitle: SQLite.Expression<String>
+    private let colAlbum: SQLite.Expression<String>
+    private let colCoverArtPath: SQLite.Expression<String?>
+    private let colBookmark: SQLite.Expression<Blob?>  // We'll store as Blob, parse to Data
+    private let colCreatedAt: SQLite.Expression<Double>  // store date as epoch seconds
+    private let colUpdatedAt: SQLite.Expression<Double?>  // optional date
+
+    // MARK: - FTS table
+    private let ftsSongsTable = Table("songs_fts")
+    private let colFtsSongId = SQLite.Expression<Int64>("songId")
+    private let colFtsArtist = SQLite.Expression<String>("artist")
+    private let colFtsTitle = SQLite.Expression<String>("title")
+    private let colFtsAlbum = SQLite.Expression<String>("album")
+
+    // MARK: - Init
+    init(db: Connection) throws {
+        self.db = db
+
+        // Initialize typed column expressions
+        let colId = SQLite.Expression<Int64>("id")
+        let colSongKey = SQLite.Expression<Int64>("songKey")
+        let colArtist = SQLite.Expression<String>("artist")
+        let colTitle = SQLite.Expression<String>("title")
+        let colAlbum = SQLite.Expression<String>("album")
+        let colCoverArtPath = SQLite.Expression<String?>("coverArtPath")
+        let colBookmark = SQLite.Expression<Blob?>("bookmark")
+        let colCreatedAt = SQLite.Expression<Double>("createdAt")
+        let colUpdatedAt = SQLite.Expression<Double?>("updatedAt")
+
+        self.colId = colId
+        self.colSongKey = colSongKey
+        self.colArtist = colArtist
+        self.colTitle = colTitle
+        self.colAlbum = colAlbum
+        self.colCoverArtPath = colCoverArtPath
+        self.colBookmark = colBookmark
+        self.colCreatedAt = colCreatedAt
+        self.colUpdatedAt = colUpdatedAt
+
+        // Create main table if needed
+        try db.run(
+            songsTable.create(ifNotExists: true) { t in
+                t.column(colId, primaryKey: .autoincrement)
+                t.column(colSongKey)
+                t.column(colArtist)
+                t.column(colTitle)
+                t.column(colAlbum)
+                t.column(colCoverArtPath)
+                t.column(colBookmark)
+                t.column(colCreatedAt)
+                t.column(colUpdatedAt)
+            }
+        )
+
+        // Create FTS table
+        try db.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS songs_fts
+            USING fts5(
+                songId UNINDEXED,
+                artist,
+                title,
+                album,
+                tokenize='porter'
+            );
+            """)
+    }
+
+    // MARK: - Upsert
+    func upsertSong(_ song: Song) async throws -> Song {
+        // We'll check if there's an existing row with the same "songKey"
+        let existingRow = try db.pluck(songsTable.filter(colSongKey == song.songKey))
+
+        let now = Date().timeIntervalSince1970  // store as epoch double
+        if let row = existingRow {
+            // We have an existing row => update
+            let songId = row[colId]
+
+            try db.run(
+                songsTable
+                    .filter(colId == songId)
+                    .update(
+                        colArtist <- song.artist,
+                        colTitle <- song.title,
+                        colAlbum <- song.album,
+                        colCoverArtPath <- song.coverArtPath,
+                        colBookmark
+                            <- song.bookmark.map { data in
+                                Blob(bytes: [UInt8](data))
+                            },
+                        colUpdatedAt <- now
+                    )
+            )
+
+            // Update FTS
+            try db.run(
+                ftsSongsTable
+                    .filter(colFtsSongId == songId)
+                    .update(
+                        colFtsArtist <- song.artist,
+                        colFtsTitle <- song.title,
+                        colFtsAlbum <- song.album
+                    )
+            )
+
+            return song.copyWith(id: songId)
+
+        } else {
+            // Insert new
+            let rowId = try db.run(
+                songsTable.insert(
+                    colSongKey <- song.songKey,
+                    colArtist <- song.artist,
+                    colTitle <- song.title,
+                    colAlbum <- song.album,
+                    colCoverArtPath <- song.coverArtPath,
+                    colBookmark <- song.bookmark.map { Blob(bytes: [UInt8]($0)) },
+                    colCreatedAt <- song.createdAt.timeIntervalSince1970,
+                    colUpdatedAt <- song.updatedAt?.timeIntervalSince1970
+                )
+            )
+
+            // Insert into FTS
+            try db.run(
+                ftsSongsTable.insert(
+                    colFtsSongId <- rowId,
+                    colFtsArtist <- song.artist,
+                    colFtsTitle <- song.title,
+                    colFtsAlbum <- song.album
+                )
+            )
+            return song.copyWith(id: rowId)
+        }
+    }
+
+    // MARK: - FTS Searching
+    func searchSongsFTS(query: String, limit: Int) async throws -> [Song] {
+        // We'll do a raw SQL statement to get bm25 ordering if needed.
+        // We store date as Double, bookmark as Blob, so let's parse them carefully.
+        let sql = """
+            SELECT s.id, s.songKey, s.artist, s.title, s.album,
+                   s.coverArtPath, s.bookmark, s.createdAt, s.updatedAt
+              FROM songs s
+              JOIN songs_fts fts ON s.id = fts.songId
+             WHERE songs_fts MATCH ?
+             ORDER BY bm25(songs_fts)
+             LIMIT ?;
+            """
+
+        var results = [Song]()
+        let statement = try db.prepare(sql, query, limit)
+        for row in statement {
+            // row[i] is an `any Binding?`, might be Int64, Double, String, Blob, or nil.
+            // We parse carefully:
+
+            // 0: s.id
+            guard let id = row[0] as? Int64 else { continue }
+            // 1: s.songKey
+            let songKey = (row[1] as? Int64) ?? 0
+            // 2: artist
+            let artist = (row[2] as? String) ?? ""
+            // 3: title
+            let title = (row[3] as? String) ?? ""
+            // 4: album
+            let album = (row[4] as? String) ?? ""
+            // 5: coverArtPath
+            let coverArtPath = row[5] as? String
+            // 6: bookmark => parse as Blob -> Data
+            let bookmarkBlob = row[6] as? Blob
+            let bookmarkData = bookmarkBlob.map { Data($0.bytes) }
+            // 7: createdAt => parse as Double -> Date
+            let createdDouble = row[7] as? Double ?? 0
+            let createdAt = Date(timeIntervalSince1970: createdDouble)
+            // 8: updatedAt => optional double
+            let updatedDouble = row[8] as? Double
+            let updatedAt = updatedDouble.map { Date(timeIntervalSince1970: $0) }
+
+            // Build a new Song
+            let song = Song(
+                id: id,
+                songKey: songKey,
+                artist: artist,
+                title: title,
+                album: album,
+                coverArtPath: coverArtPath,
+                bookmark: bookmarkData,
+                createdAt: createdAt,
+                updatedAt: updatedAt
+            )
+            results.append(song)
+        }
+        return results
+    }
 }
