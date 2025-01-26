@@ -7,6 +7,54 @@ import os
 let subsystem = "com.snowbear.musicapp"
 let baseLogger = Logger(subsystem: subsystem, category: "General")
 
+enum CustomError: Error {
+    case genericError(_ message: String)
+}
+
+struct PathSearchResult {
+    let pathId: Int64
+    let rank: Double
+    init(pathId: Int64, rank: Double) {
+        self.pathId = pathId
+        self.rank = rank
+    }
+}
+
+// models
+struct User: Sendable {
+    let id: Int64?
+    let icloudId: Int64
+}
+
+struct Library: Sendable {
+    var id: Int64?
+    var dirPath: String
+    var userId: Int64
+    var totalPaths: Int?
+    var syncError: String?
+    var isCurrent: Bool
+    var createdAt: Date
+    var lastSyncedAt: Date?
+    var updatedAt: Date?
+}
+
+struct LibraryPath: Sendable {
+    let id: Int64?
+    let libraryId: Int64
+
+    let pathId: Int64
+    let parentPathId: Int64?
+    let name: String
+    let relativePath: String
+    let isDirectory: Bool
+
+    let fileHashSHA256: Data?
+    let runId: Int64
+
+    let createdAt: Date
+    let updatedAt: Date?
+}
+
 func setupSQLiteConnection(dbName: String) -> Connection? {
     baseLogger.debug("setting up connection ...")
     let dbPath = NSSearchPathForDirectoriesInDomains(
@@ -80,6 +128,14 @@ struct LibrarySyncResultItem {
     }
 }
 
+protocol LibraryPathSearchRepository {
+    func insertIntoFTS(path: LibraryPath) async throws
+    func batchInsertIntoFTS(paths: [LibraryPath]) async throws
+    func search(query: String, limit: Int) async throws -> [PathSearchResult]
+    func deleteFTS(pathId: Int64) async throws
+    func batchDeleteFTS(pathIds: [Int64]) async throws
+}
+
 protocol LibrarySyncService {
     func syncDir(
         libraryId: Int64,
@@ -143,6 +199,8 @@ actor DefaultLibrarySyncService: LibrarySyncService {
     {
         logger.debug("starting to collect items")
         do {
+            onSetLoading?(true)
+            defer { onSetLoading?(false) }
             let result = try await syncDirInner(
                 folderURL: folderURL, onCurrentURL: onCurrentURL, onSetLoading: onSetLoading)
             let runId = Int64(Date().timeIntervalSince1970 * 1000)
@@ -206,6 +264,10 @@ actor DefaultLibrarySyncService: LibrarySyncService {
         }
     }
 
+    func makeBookmarkKey(_ folderURL: URL) -> String {
+        return String(hashStringToInt64(folderURL.absoluteString))
+    }
+
     func syncDirInner(
         folderURL: URL,
         onCurrentURL: ((_ url: URL) -> Void)?,
@@ -213,223 +275,76 @@ actor DefaultLibrarySyncService: LibrarySyncService {
     ) async throws
         -> LibrarySyncResult?
     {
-        logger.debug("Starting from: \(folderURL.path)")
-        onSetLoading?(true)
-
-        let audioExtensions = ["mp3", "wav", "m4a", "flac", "aac"]
-
-        let resourceKeys: Set<URLResourceKey> = [
-            .isDirectoryKey, .isUbiquitousItemKey, .ubiquitousItemDownloadingStatusKey,
-        ]
-
-        let onFileURL = {
-            (fileURL: URL, onDir: ((_ url: URL) -> Void), onFile: ((_ url: URL) -> Void)) in
-            let logger = self.logger
-
-            logger.debug("Dequeued folder: \(fileURL.path)")
-            onCurrentURL?(fileURL)
-
-            let resourceValues = try fileURL.resourceValues(forKeys: resourceKeys)
-            logger.debug("got resource values")
-            if resourceValues.isDirectory == true {
-                onDir(fileURL)
-                return
-            }
-            let fileExtension = fileURL.pathExtension.lowercased()
-            if audioExtensions.contains(fileExtension) {
-                logger.debug(
-                    "Audio file found, adding to list: \(fileURL.lastPathComponent)")
-                onFile(fileURL)
-
-            }
-            logger.debug("done with: \(fileURL.path)")
-        }
-
         var audioURLs: [LibrarySyncResultItem] = []
         var result = [String: LibrarySyncResultItem]()
-
-        let fileManager = FileManager.default
-        do {
-          
-          let provider = CloudFileProvider(baseURL: folderURL)
-          var queue: [String] = []
-          var visited: Set<String> = []
-//          provider.contentsOfDirectory(path: )
-          queue.append(folderURL.absoluteString)
-          
-            let files = fileManager.enumerator(
-                at: folderURL, includingPropertiesForKeys: Array(resourceKeys),
-                options: [.skipsHiddenFiles])!
-
-          while !queue.isEmpty {
-//            for case let fileURL as URL in files {
-            let current = queue.removeFirst()
-            let fileURL = URL(string: current)!
-            
-                        guard !visited.contains(current) else {
-                            logger.debug("[BFS] Already visited \(current), skipping...")
-                            continue
-                        }
-                        visited.insert(current)
-            
-            result[FileHelper(fileURL: fileURL).toString()] = LibrarySyncResultItem(
-                rootURL: folderURL, current: fileURL, isDirectory: true)
-            logger.debug("done with: \(fileURL.path)")
-            
-            let items: [FileObject] = try await withCheckedThrowingContinuation { continuation in
-              provider.contentsOfDirectory(path: "/") { contents, error in
-                        if let error = error {
-                            continuation.resume(throwing: error)
-                        }  else {
-                          continuation.resume(returning: contents)
-                        }
-                    }
-                }
-            for  item in items {
-              let fileURL = URL(string: item.path)!
-            
-            
-                try onFileURL(
-                    fileURL,
-                    { fileURL in
-                      queue.append(fileURL.absoluteString)
-                    },
-                    { fileURL in
-                        let resultItem = LibrarySyncResultItem(
-                            rootURL: folderURL, current: fileURL, isDirectory: false)
-                        audioURLs.append(resultItem)
-                        result[FileHelper(fileURL: fileURL).toString()] = resultItem
-                    })
-              
-            }
-            }
-        } catch {
-            print("Error: \(error.localizedDescription)")
+        let bookmarkKey = makeBookmarkKey(folderURL)
+        let audioExtensions = ["mp3", "wav", "m4a", "flac", "aac"]
+        guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
+            throw CustomError.genericError("no bookmark found, pick folder")
         }
 
-        logger.debug("Total audio files found: \(audioURLs.count)")
-        onSetLoading?(false)
+        var isStale = false
+        do {
+            let folderURL = try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: [],
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale)
 
-        return LibrarySyncResult(
-            allItems: Array(result.values), audioFiles: audioURLs, totalAudioFiles: audioURLs.count)
+            if isStale {
+                // The bookmark is stale, so we need a new one
+                throw CustomError.genericError(
+                    "Bookmark is stale, user needs to pick folder again.")
+            }
 
-        //
-        //        while !queue.isEmpty {
-        //            let current = queue.removeFirst().resolvingSymlinksInPath()
-        //            result[FileHelper(fileURL: current).toString()] = LibrarySyncResultItem(
-        //                rootURL: folderURL, current: current, isDirectory: true)
-        //
-        //            onCurrentURL?(current)
-        //            logger.debug("[BFS] Dequeued folder: \(current.path)")
-        //
-        //            guard !visited.contains(current) else {
-        //                logger.debug("[BFS] Already visited \(current.path), skipping...")
-        //                continue
-        //            }
-        //            visited.insert(current)
-        //
-        //            do {
-        //                let items = try fm.contentsOfDirectory(
-        //                    at: current,
-        //                    includingPropertiesForKeys: [
-        //                        .isDirectoryKey,
-        //                        .isSymbolicLinkKey,
-        //                        .ubiquitousItemDownloadingStatusKey,
-        //                    ],
-        //                    options: [.skipsHiddenFiles]
-        //                )
-        //                logger.debug("[BFS] Found \(items.count) items in \(current.lastPathComponent)")
-        //
-        //                for item in items {
-        //                    let rv = try item.resourceValues(forKeys: [
-        //                        .isDirectoryKey,
-        //                        .isSymbolicLinkKey,
-        //                        .ubiquitousItemDownloadingStatusKey,
-        //                    ])
-        //
-        //                    if rv.isSymbolicLink == true {
-        //                        logger.debug("[BFS] Skipping symbolic link: \(item.path)")
-        //                        continue
-        //                    }
-        //
-        //                    if rv.isDirectory == true {
-        //                        if let status = rv.ubiquitousItemDownloadingStatus, status == .notDownloaded
-        //                        {
-        //                            do {
-        //                                logger.debug(
-        //                                    "[BFS] Subfolder not downloaded, requesting download: \(item.lastPathComponent)"
-        //                                )
-        //                                try fm.startDownloadingUbiquitousItem(at: item)
-        //                                // We'll skip adding to BFS queue until it’s downloaded
-        //                               try await waitForFolderDownloadIfNeeded(item)
-        //
-        //                            } catch {
-        //                                logger.debug(
-        //                                    "[BFS] Error requesting iCloud subfolder download: \(error)")
-        //                            }
-        //                            continue
-        //                        }
-        //                        logger.debug(
-        //                            "[BFS] Subfolder found, adding to queue: \(item.lastPathComponent)")
-        //                        queue.append(item)
-        //                    } else {
-        //                        let ext = item.pathExtension.lowercased()
-        //                        if ["mp3", "m4a", "aiff"].contains(ext) {
-        //                            logger.debug(
-        //                                "[BFS] Audio file found, adding to list: \(item.lastPathComponent)")
-        //                            let resultItem = LibrarySyncResultItem(
-        //                                rootURL: folderURL, current: item, isDirectory: false)
-        //                            audioURLs.append(resultItem)
-        //                            result[FileHelper(fileURL: item).toString()] = resultItem
-        //                        }
-        //                    }
-        //                }
-        //            } catch {
-        //                logger.error(
-        //                    "[BFS] Error reading directory \(current.path): \(error.localizedDescription)")
-        //            }
-        //        }
-        //        logger.debug("[BFS] BFS complete. Total audio files found: \(audioURLs.count)")
-        //        onSetLoading?(false)
-        //
-        //        return LibrarySyncResult(
-        //            allItems: Array(result.values), audioFiles: audioURLs, totalAudioFiles: audioURLs.count)
+            // Start accessing security-scoped resource
+            guard folderURL.startAccessingSecurityScopedResource() else {
+                throw CustomError.genericError("Couldn't start accessing security scoped resource.")
+            }
+            defer { folderURL.stopAccessingSecurityScopedResource() }
+
+            // Now we can scan the folder
+            // scanFolderRecursively(folderURL: folderURL)
+            if let enumerator = FileManager.default.enumerator(
+                at: folderURL, includingPropertiesForKeys: [.isDirectoryKey],
+                options: [.skipsHiddenFiles, .skipsPackageDescendants])
+            {
+                for case let file as URL in enumerator {
+                    do {
+                        onCurrentURL?(file)
+                        let resourceValues = try file.resourceValues(forKeys: [.isDirectoryKey])
+                        if resourceValues.isDirectory == false,  // file.pathExtension.lowercased() == "mp3"
+                            audioExtensions.contains(file.pathExtension.lowercased())
+                        {
+                            // Parse partial ID3
+                            // let (title, artist, album) = parseID3Tags(for: file)
+                            // let meta = SongMetadata(
+                            //     fileURL: file, title: title, artist: artist, album: album)
+                            // collectedSongs.append(meta)
+                            let resultItem = LibrarySyncResultItem(
+                                rootURL: folderURL, current: file, isDirectory: false)
+                            audioURLs.append(resultItem)
+                            result[FileHelper(fileURL: file).toString()] = resultItem
+                        } else {
+                            let resultItem = LibrarySyncResultItem(
+                                rootURL: folderURL, current: file, isDirectory: true)
+                            result[FileHelper(fileURL: file).toString()] = resultItem
+                        }
+                    } catch {
+                        logger.error("Error reading resource values: \(error)")
+                    }
+                }
+                logger.debug("Total audio files found: \(audioURLs.count)")
+                return LibrarySyncResult(
+                    allItems: Array(result.values), audioFiles: audioURLs,
+                    totalAudioFiles: audioURLs.count)
+            } else {
+                throw CustomError.genericError("failed to get enumerator")
+            }
+        } catch {
+            throw CustomError.genericError("error resolving bookmark: \(error)")
+        }
     }
-}
-
-// models
-struct User: Sendable {
-    let id: Int64?
-    let icloudId: Int64
-}
-
-struct Library: Sendable {
-    var id: Int64?
-    var dirPath: String
-    var userId: Int64
-    var totalPaths: Int?
-    var syncError: String?
-    var isCurrent: Bool
-    var createdAt: Date
-    var lastSyncedAt: Date?
-    var updatedAt: Date?
-}
-
-struct LibraryPath: Sendable {
-    let id: Int64?
-    let libraryId: Int64
-
-    let pathId: Int64
-    let parentPathId: Int64?
-    let name: String
-    let relativePath: String
-    let isDirectory: Bool
-
-    let fileHashSHA256: Data?
-    let runId: Int64
-
-    let createdAt: Date
-    let updatedAt: Date?
 }
 
 protocol LibraryService {
@@ -1012,4 +927,47 @@ extension LibraryPath {
             updatedAt: updatedAt
         )
     }
+}
+
+actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
+    func insertIntoFTS(path: LibraryPath) async throws {
+
+    }
+
+    func batchInsertIntoFTS(paths: [LibraryPath]) async throws {
+
+    }
+
+    func search(query: String, limit: Int) async throws -> [PathSearchResult] {
+
+    }
+
+    func deleteFTS(pathId: Int64) async throws {
+
+    }
+
+    func batchDeleteFTS(pathIds: [Int64]) async throws {
+
+    }
+
+    private let db: Connection
+    private let ftsTable = Table("library_paths_fts")
+    private let colFtsPathId = SQLite.Expression<Int64>("pathId")
+    private let colFtsFullPath = SQLite.Expression<Int64>("fullPath")
+    private let colFtsFileName = SQLite.Expression<Int64>("fileName")
+
+    init(db: Connection) throws {
+        self.db = db
+        try db.execute(
+            """
+            CREATE VIRTUAL TABLE IF NOT EXISTS library_paths_fts
+            USING fts5(
+                pathId UNINDEXED,
+                fullPath,
+                fileName,
+                tokenize='porter'
+            );
+            """)
+    }
+
 }

@@ -74,7 +74,7 @@ struct SyncView: View {
     }
 
     var body: some View {
-        VStack{
+        VStack {
             switch syncViewModel.state {
             case .noICloud:
                 SelectFolderView(
@@ -104,8 +104,13 @@ struct SyncView: View {
                 ) { result in
                     switch result {
                     case .success(let urls) where urls.count != 0:
-                        if let singleUrl = urls.first {
-                            self.pickedFolder = singleUrl.absoluteString
+                        if let folderURL = urls.first {
+                            do {
+                                try self.syncViewModel.registerBookmark(folderURL)
+                                self.pickedFolder = folderURL.absoluteString
+                            } catch {
+                                logger.debug("picker error \(error)")
+                            }
                         } else {
                             logger.debug("couldn't get url")
                         }
@@ -125,9 +130,36 @@ struct SyncView: View {
             case .showTreeView:
                 VStack {
                     let totalFiles = syncViewModel.currentLibrary?.totalPaths ?? 0
-                    Text("Tree view! \(totalFiles)")
+                    Text("file select view! \(totalFiles)")
                     Button("Sync now") {
                         syncViewModel.sync()
+                    }
+
+                    Button("resync") {
+                        logger.debug("attempting to click")
+                        isPickingFolder = true
+                    }
+                    .padding(20)
+                    .fileImporter(
+                        isPresented: $isPickingFolder,
+                        allowedContentTypes: [.folder],
+                        allowsMultipleSelection: false
+                    ) { result in
+                        switch result {
+                        case .success(let urls) where urls.count != 0:
+                            if let folderURL = urls.first {
+                                do {
+                                    try self.syncViewModel.registerBookmark(folderURL)
+                                    self.pickedFolder = folderURL.absoluteString
+                                } catch {
+                                    logger.debug("picker error \(error)")
+                                }
+                            } else {
+                                logger.debug("couldn't get url")
+                            }
+                        default:
+                            logger.debug("couldn't get url")
+                        }
                     }
                 }
             case .syncInProgress:
@@ -142,7 +174,7 @@ struct SyncView: View {
                     Text("unknown state")
                 }
             }
-        }.onChange(of: pickedFolder){
+        }.onChange(of: pickedFolder) {
             if let pickedFolder = pickedFolder {
                 syncViewModel.registerPath(pickedFolder)
                 logger.debug("updated path")
@@ -220,9 +252,23 @@ class SyncViewModel: ObservableObject {
             } catch {
                 logger.debug("failed to register lib \(error.localizedDescription)")
             }
-            
+
             logger.debug("library is set...")
         }
+    }
+
+    func registerBookmark(_ folderURL: URL) throws {
+        guard folderURL.startAccessingSecurityScopedResource() else {
+            print("Unable to access security scoped resource.")
+            return
+        }
+        defer { folderURL.stopAccessingSecurityScopedResource() }
+        let bookmarkKey = String(hashStringToInt64(folderURL.absoluteString))
+        let bookmarkData = try folderURL.bookmarkData(
+            options: [],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil)
+        UserDefaults.standard.set(bookmarkData, forKey: bookmarkKey)
     }
 
     func sync() {
@@ -239,14 +285,12 @@ class SyncViewModel: ObservableObject {
                         libraryId: libraryId!, folderURL: URL(string: folderPath!)!,
                         onCurrentURL: { url in
                             DispatchQueue.main.async {
-                                
                                 self.currentSyncedDir = url?.absoluteString
-                                
                             }
                         },
                         onSetLoading: { loading in
                             DispatchQueue.main.async {
-                                
+
                                 self.isSyncing = loading
                             }
                         })

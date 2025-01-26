@@ -62,10 +62,10 @@
             filePath = "musicapp/App.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "472"
-            endingLineNumber = "472"
-            landmarkName = "registerLibraryPath(userId:path:)"
-            landmarkType = "7">
+            startingLineNumber = "420"
+            endingLineNumber = "420"
+            landmarkName = "LibraryRepository"
+            landmarkType = "5">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -78,10 +78,10 @@
             filePath = "musicapp/App.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "477"
-            endingLineNumber = "477"
-            landmarkName = "registerLibraryPath(userId:path:)"
-            landmarkType = "7">
+            startingLineNumber = "425"
+            endingLineNumber = "425"
+            landmarkName = "LibraryRepository"
+            landmarkType = "5">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -94,10 +94,10 @@
             filePath = "musicapp/App.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "479"
-            endingLineNumber = "479"
-            landmarkName = "registerLibraryPath(userId:path:)"
-            landmarkType = "7">
+            startingLineNumber = "427"
+            endingLineNumber = "427"
+            landmarkName = "LibraryRepository"
+            landmarkType = "5">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -110,8 +110,8 @@
             filePath = "musicapp/Views/SyncView.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "216"
-            endingLineNumber = "216"
+            startingLineNumber = "241"
+            endingLineNumber = "241"
             landmarkName = "registerPath(_:)"
             landmarkType = "7">
          </BreakpointContent>
@@ -126,8 +126,8 @@
             filePath = "musicapp/Views/SyncView.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "218"
-            endingLineNumber = "218"
+            startingLineNumber = "243"
+            endingLineNumber = "243"
             landmarkName = "registerPath(_:)"
             landmarkType = "7">
          </BreakpointContent>
@@ -142,8 +142,8 @@
             filePath = "musicapp/Views/SyncView.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "224"
-            endingLineNumber = "224"
+            startingLineNumber = "249"
+            endingLineNumber = "249"
             landmarkName = "registerPath(_:)"
             landmarkType = "7">
          </BreakpointContent>
@@ -158,24 +158,8 @@
             filePath = "musicapp/App.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "267"
-            endingLineNumber = "267"
-            landmarkName = "syncDirInner(folderURL:onCurrentURL:onSetLoading:)"
-            landmarkType = "7">
-         </BreakpointContent>
-      </BreakpointProxy>
-      <BreakpointProxy
-         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
-         <BreakpointContent
-            uuid = "4D522898-5B44-4EDE-AB53-8B00F3A9002A"
-            shouldBeEnabled = "No"
-            ignoreCount = "0"
-            continueAfterRunningActions = "No"
-            filePath = "musicapp/App.swift"
-            startingColumnNumber = "9223372036854775807"
-            endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "279"
-            endingLineNumber = "279"
+            startingLineNumber = "275"
+            endingLineNumber = "275"
             landmarkName = "syncDirInner(folderURL:onCurrentURL:onSetLoading:)"
             landmarkType = "7">
          </BreakpointContent>
@@ -184,44 +168,60 @@
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
             uuid = "C644A5B0-90BB-46AC-81E2-0B78B6041E09"
-            shouldBeEnabled = "Yes"
+            shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "musicapp/App.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "288"
-            endingLineNumber = "288"
+            startingLineNumber = "313"
+            endingLineNumber = "313"
             landmarkName = "syncDirInner(folderURL:onCurrentURL:onSetLoading:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "B697605B-FBC0-4B56-9CE7-0D35A99B5842"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../../Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "260"
+            endingLineNumber = "260"
+            landmarkName = "searchFiles(path:recursive:query:foundItemHandler:completionHandler:)"
             landmarkType = "7">
             <Locations>
                <Location
-                  uuid = "C644A5B0-90BB-46AC-81E2-0B78B6041E09 - d806c1190f3ad12"
+                  uuid = "B697605B-FBC0-4B56-9CE7-0D35A99B5842 - f782d84e2538c8c"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
-                  symbolName = "(3) suspend resume partial function for musicapp.DefaultLibrarySyncService.syncDirInner(folderURL: Foundation.URL, onCurrentURL: Swift.Optional&lt;(Foundation.URL) -&gt; ()&gt;, onSetLoading: Swift.Optional&lt;(Swift.Bool) -&gt; ()&gt;) async throws -&gt; Swift.Optional&lt;musicapp.LibrarySyncResult&gt;"
+                  symbolName = "closure #3 @Sendable (Foundation.Notification) -&gt; () in FilesProvider.CloudFileProvider.searchFiles(path: Swift.String, recursive: Swift.Bool, query: __C.NSPredicate, foundItemHandler: Swift.Optional&lt;(FilesProvider.FileObject) -&gt; ()&gt;, completionHandler: (Swift.Array&lt;FilesProvider.FileObject&gt;, Swift.Optional&lt;Swift.Error&gt;) -&gt; ()) -&gt; Swift.Optional&lt;__C.NSProgress&gt;"
                   moduleName = "musicapp.debug.dylib"
                   usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/snowbear/WORK/GIT/music-app/musicapp/App.swift"
+                  urlString = "file:///Users/snowbear/Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "288"
-                  endingLineNumber = "288">
+                  startingLineNumber = "260"
+                  endingLineNumber = "260">
                </Location>
                <Location
-                  uuid = "C644A5B0-90BB-46AC-81E2-0B78B6041E09 - d806c1190f3ad12"
+                  uuid = "B697605B-FBC0-4B56-9CE7-0D35A99B5842 - f782d84e2538c8c"
                   shouldBeEnabled = "Yes"
                   ignoreCount = "0"
                   continueAfterRunningActions = "No"
-                  symbolName = "(3) suspend resume partial function for musicapp.DefaultLibrarySyncService.syncDirInner(folderURL: Foundation.URL, onCurrentURL: Swift.Optional&lt;(Foundation.URL) -&gt; ()&gt;, onSetLoading: Swift.Optional&lt;(Swift.Bool) -&gt; ()&gt;) async throws -&gt; Swift.Optional&lt;musicapp.LibrarySyncResult&gt;"
+                  symbolName = "closure #3 @Sendable (Foundation.Notification) -&gt; () in FilesProvider.CloudFileProvider.searchFiles(path: Swift.String, recursive: Swift.Bool, query: __C.NSPredicate, foundItemHandler: Swift.Optional&lt;(FilesProvider.FileObject) -&gt; ()&gt;, completionHandler: (Swift.Array&lt;FilesProvider.FileObject&gt;, Swift.Optional&lt;Swift.Error&gt;) -&gt; ()) -&gt; Swift.Optional&lt;__C.NSProgress&gt;"
                   moduleName = "musicapp.debug.dylib"
                   usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/snowbear/WORK/GIT/music-app/musicapp/App.swift"
+                  urlString = "file:///Users/snowbear/Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
                   startingColumnNumber = "9223372036854775807"
                   endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "288"
-                  endingLineNumber = "288">
+                  startingLineNumber = "260"
+                  endingLineNumber = "260">
                </Location>
             </Locations>
          </BreakpointContent>
@@ -229,17 +229,159 @@
       <BreakpointProxy
          BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
          <BreakpointContent
-            uuid = "5D990A05-858D-4ECF-BA42-C41517E1F2EB"
+            uuid = "DE15B021-BE61-40BB-B7AF-AA155B7570D7"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../../Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "196"
+            endingLineNumber = "196"
+            landmarkName = "searchFiles(path:recursive:query:foundItemHandler:completionHandler:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "EA3958C1-B4E6-4708-971F-B38E732D559D"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../../Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "256"
+            endingLineNumber = "256"
+            landmarkName = "searchFiles(path:recursive:query:foundItemHandler:completionHandler:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "6EC341C5-1D79-479D-BD5D-006A82B84A67"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../../Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "252"
+            endingLineNumber = "252"
+            landmarkName = "searchFiles(path:recursive:query:foundItemHandler:completionHandler:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "3772F3F3-E7C9-4F9D-A4C1-53FB982AA233"
             shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../../Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "204"
+            endingLineNumber = "204"
+            landmarkName = "searchFiles(path:recursive:query:foundItemHandler:completionHandler:)"
+            landmarkType = "7">
+            <Locations>
+               <Location
+                  uuid = "3772F3F3-E7C9-4F9D-A4C1-53FB982AA233 - 62877eac8ebfacb3"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "FilesProvider.CloudFileProvider.searchFiles(path: Swift.String, recursive: Swift.Bool, query: __C.NSPredicate, foundItemHandler: Swift.Optional&lt;(FilesProvider.FileObject) -&gt; ()&gt;, completionHandler: (Swift.Array&lt;FilesProvider.FileObject&gt;, Swift.Optional&lt;Swift.Error&gt;) -&gt; ()) -&gt; Swift.Optional&lt;__C.NSProgress&gt;"
+                  moduleName = "musicapp.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/snowbear/Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "204"
+                  endingLineNumber = "204">
+               </Location>
+               <Location
+                  uuid = "3772F3F3-E7C9-4F9D-A4C1-53FB982AA233 - 4c0073cae7e440ce"
+                  shouldBeEnabled = "Yes"
+                  ignoreCount = "0"
+                  continueAfterRunningActions = "No"
+                  symbolName = "closure #1 () -&gt; () in FilesProvider.CloudFileProvider.searchFiles(path: Swift.String, recursive: Swift.Bool, query: __C.NSPredicate, foundItemHandler: Swift.Optional&lt;(FilesProvider.FileObject) -&gt; ()&gt;, completionHandler: (Swift.Array&lt;FilesProvider.FileObject&gt;, Swift.Optional&lt;Swift.Error&gt;) -&gt; ()) -&gt; Swift.Optional&lt;__C.NSProgress&gt;"
+                  moduleName = "musicapp.debug.dylib"
+                  usesParentBreakpointCondition = "Yes"
+                  urlString = "file:///Users/snowbear/Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
+                  startingColumnNumber = "9223372036854775807"
+                  endingColumnNumber = "9223372036854775807"
+                  startingLineNumber = "204"
+                  endingLineNumber = "204">
+               </Location>
+            </Locations>
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "CE213814-95B9-4C1C-82A5-FA50F06BFE26"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../../Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "244"
+            endingLineNumber = "244"
+            landmarkName = "searchFiles(path:recursive:query:foundItemHandler:completionHandler:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "8EA3BB5D-5D5F-4C03-B533-AE5747FB0885"
+            shouldBeEnabled = "Yes"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "../../../Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "274"
+            endingLineNumber = "274"
+            landmarkName = "searchFiles(path:recursive:query:foundItemHandler:completionHandler:)"
+            landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "5D676EBF-A960-4B1A-85CD-97CD8CB77001"
+            shouldBeEnabled = "No"
             ignoreCount = "0"
             continueAfterRunningActions = "No"
             filePath = "musicapp/App.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "284"
-            endingLineNumber = "284"
+            startingLineNumber = "311"
+            endingLineNumber = "311"
             landmarkName = "syncDirInner(folderURL:onCurrentURL:onSetLoading:)"
             landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "E39510B7-C97F-4C58-8DAC-EFDB592951DC"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "musicapp/App.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "266"
+            endingLineNumber = "266"
+            landmarkName = "DefaultLibrarySyncService"
+            landmarkType = "3">
          </BreakpointContent>
       </BreakpointProxy>
    </Breakpoints>

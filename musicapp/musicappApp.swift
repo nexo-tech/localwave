@@ -15,7 +15,7 @@ struct musicappApp: App {
 
     private func setupView() -> some View {
         do {
-            let schemaVersion = 2
+            let schemaVersion = 5
             let db = setupSQLiteConnection(dbName: "musicapp\(schemaVersion).sqlite")
             let userRepo = try SQLiteUserRepository(db: db!)
             let userService = DefaultUserService(userRepository: userRepo)
