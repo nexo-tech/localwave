@@ -1,4 +1,5 @@
 import AVFoundation
+import CryptoKit
 import SQLite
 import UIKit
 import os
@@ -126,23 +127,13 @@ func hashStringToInt64(_ str: String) -> Int64 {
     return Int64(bitPattern: hash & 0x7FFF_FFFF_FFFF_FFFF)
 }
 
-class AppDependencies {
+struct AppDependencies {
     let userService: UserService
     let userCloudService: UserCloudService
     let icloudProvider: ICloudProvider
     let libraryService: LibraryService
-
-    init(
-        userService: UserService,
-        userCloudService: UserCloudService,
-        icloudProvider: ICloudProvider,
-        libraryService: LibraryService
-    ) {
-        self.userService = userService
-        self.userCloudService = userCloudService
-        self.icloudProvider = icloudProvider
-        self.libraryService = libraryService
-    }
+    let songRepository: SongRepository
+    let songImportService: SongImportService
 }
 
 struct LibrarySyncResult {
@@ -232,59 +223,145 @@ struct FileHelper {
     }
 }
 
-actor SongImporter {
-    let logger = Logger(subsystem: subsystem, category: "SongImporter")
+protocol SongImportService {
+    func importPaths(
+        paths: [LibraryPath],
+        onProgress: ((Double, URL) async -> Void)?
+    ) async throws
+}
 
+actor DefaultSongImportService: SongImportService {
+    private let logger = Logger(subsystem: subsystem, category: "SongImporter")
     private let songRepo: SongRepository
     private let libraryPathRepo: LibraryPathRepository
+    private let libraryRepo: LibraryRepository
+    private var activeRootURLs: [Int64: URL] = [:]  // [LibraryID: RootURL]
 
-    init(songRepo: SongRepository, libraryPathRepo: LibraryPathRepository) {
+    init(
+        songRepo: SongRepository,
+        libraryPathRepo: LibraryPathRepository,
+        libraryRepo: LibraryRepository
+    ) {
         self.songRepo = songRepo
         self.libraryPathRepo = libraryPathRepo
+        self.libraryRepo = libraryRepo
     }
 
-    /// Import all paths from a list of [LibraryPath].
-    /// If a path is a directory, we gather all descendants recursively.
-    func importPaths(paths: [LibraryPath]) async throws {
-        // Step 1: gather all actual files
-        let filePaths = try await gatherAllFiles(paths: paths)
+    private func prepareSecurityAccess(for paths: [LibraryPath]) async throws {
+        let libraryIds = Set(paths.map { $0.libraryId })
 
-        // Step 2: parse each file, create Song, upsert into DB
-        for filePath in filePaths {
-            // Reconstruct local URL from the LibraryPath
-            // For example, if you have a "root" or "dirPath" somewhere, do:
-            // let baseURL = URL(fileURLWithPath: someLibraryRootPath, isDirectory: true)
-            // let fileURL = baseURL.appendingPathComponent(filePath.relativePath)
-            //
-            // For now, let's assume you have a method that can give you the real URL for that library path:
-            guard let fileURL = resolveFileURL(for: filePath) else {
+        for libraryId in libraryIds {
+            guard let rootURL = try await resolveRootURL(for: libraryId) else {
+                throw CustomError.genericError("Failed to access library \(libraryId)")
+            }
+            activeRootURLs[libraryId] = rootURL
+        }
+    }
+
+    private func resolveRootURL(for libraryId: Int64) async throws -> URL? {
+        // Check cache first
+        if let cached = activeRootURLs[libraryId] {
+            return cached
+        }
+
+        // Fetch library from repository
+        guard let library = try await libraryRepo.getOne(id: libraryId) else {
+            logger.error("Library not found: \(libraryId)")
+            return nil
+        }
+
+        // Resolve bookmark
+        let bookmarkKey = String(hashStringToInt64(library.dirPath))
+        guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
+            logger.error("Missing bookmark for library \(libraryId)")
+            return nil
+        }
+
+        var isStale = false
+        let url = try URL(
+            resolvingBookmarkData: bookmarkData,
+            options: [],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale)
+
+        // Refresh stale bookmark
+        if isStale {
+            let newBookmark = try url.bookmarkData(options: [])
+            UserDefaults.standard.set(newBookmark, forKey: bookmarkKey)
+        }
+
+        // Start security access
+        guard url.startAccessingSecurityScopedResource() else {
+            logger.error("Security scope access failed for \(libraryId)")
+            return nil
+        }
+
+        // Cache the resolved URL
+        activeRootURLs[libraryId] = url
+        return url
+    }
+
+    private func releaseSecurityAccess() {
+        activeRootURLs.forEach { $1.stopAccessingSecurityScopedResource() }
+        activeRootURLs.removeAll()
+    }
+
+    /// Import all paths, recursively grabbing files from directories.
+    /// - parameter onProgress: Called with (percentage from 0..100, currentFileURL).
+    func importPaths(
+        paths: [LibraryPath],
+        onProgress: ((Double, URL) async -> Void)? = nil
+    ) async throws {
+        logger.debug("Gathering files from \(paths.count) paths")
+        let filePaths = try await gatherAllFiles(paths: paths)
+        logger.debug("Total files: \(filePaths.count)")
+        try await prepareSecurityAccess(for: filePaths)
+        defer { releaseSecurityAccess() }
+
+        for (index, filePath) in filePaths.enumerated() {
+            guard let fileURL = await resolveFileURL(for: filePath) else {
+                logger.error("Skipping file due to unresolved URL")
                 continue
             }
 
-            // Use AVFoundation to read metadata
+            // Provide progress callback
+            let percent = Double(index + 1) / Double(filePaths.count) * 100
+            logger.debug("progress: \(percent)%; url: \(fileURL)")
+            await onProgress?(percent, fileURL)
+
+            // 1) Skip if already processed
+            if filePath.fileHashSHA256 != nil {
+                logger.debug("Skipping already-processed file: \(fileURL.lastPathComponent)")
+                continue
+            }
+
+            // 2) Compute new file hash & store in DB
+            let fileData = try Data(contentsOf: fileURL)
+            let fileHash = sha256(fileData)
+            try await libraryPathRepo.updateFileHash(pathId: filePath.pathId, fileHash: fileHash)
+
+            // 3) Read metadata
             let (artist, title, album) = await readMetadataAVAsset(url: fileURL)
             let songKey = generateSongKey(artist: artist, title: title, album: album)
 
-            // Create a security-scoped bookmark
-            let bookmarkData = try createBookmark(for: fileURL)
+            // 4) Extract artwork
+            let coverArtData = await extractCoverArtData(url: fileURL)
+            let coverArtPath = try storeCoverArtOnDiskDedup(coverArtData)
 
-            // Optionally store cover art on disk if you want
-            // let coverPath = storeCoverArtOnDisk(...)
-
-            // Upsert
+            // 5) Upsert into DB
             let newSong = Song(
                 id: nil,
                 songKey: songKey,
                 artist: artist,
                 title: title,
                 album: album,
-                coverArtPath: nil,  // or coverPath if you do cover art
-                bookmark: bookmarkData,
+                coverArtPath: coverArtPath,
+                bookmark: try createBookmark(for: fileURL),
                 createdAt: Date(),
                 updatedAt: nil
             )
             let song = try await songRepo.upsertSong(newSong)
-            logger.debug("upserted song: \(song.title)")
+            logger.debug("Upserted song: \(song.title)")
         }
     }
 
@@ -293,14 +370,10 @@ actor SongImporter {
         var result = [LibraryPath]()
         for p in paths {
             if p.isDirectory {
-                // gather children from libraryPathRepo
                 let children = try await libraryPathRepo.getByParentId(
-                    libraryId: p.libraryId,
-                    parentPathId: p.pathId
+                    libraryId: p.libraryId, parentPathId: p.pathId
                 )
-                // recursively gather
-                let sub = try await gatherAllFiles(paths: children)
-                result.append(contentsOf: sub)
+                result.append(contentsOf: try await gatherAllFiles(paths: children))
             } else {
                 result.append(p)
             }
@@ -308,68 +381,112 @@ actor SongImporter {
         return result
     }
 
-    // MARK: - Avfoundation-based metadata reading
+    // MARK: - Resolve file URL with caching
+    // MARK: - File URL Resolution
+    private func resolveFileURL(for path: LibraryPath) async -> URL? {
+        guard let rootURL = activeRootURLs[path.libraryId] else {
+            logger.error("No root URL found for library \(path.libraryId)")
+            return nil
+        }
+
+        return rootURL.appendingPathComponent(path.relativePath, isDirectory: false)
+    }
+
+    private func resolveURLFromLibrary(_ library: Library, relativePath: String) throws -> URL? {
+        let folderAbsoluteString = library.dirPath
+        let folderURL = URL(string: folderAbsoluteString)!
+        let bookmarkKey = String(hashStringToInt64(folderAbsoluteString))
+
+        guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
+            logger.error("No bookmark found for library \(library.id ?? -1)")
+            return nil
+        }
+
+        var isStale = false
+        let resolvedURL = try URL(
+            resolvingBookmarkData: bookmarkData,
+            options: [],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        )
+
+        if isStale {
+            // Renew bookmark and update cache if needed
+            let newBookmark = try resolvedURL.bookmarkData()
+            UserDefaults.standard.set(newBookmark, forKey: bookmarkKey)
+        }
+
+        guard resolvedURL.startAccessingSecurityScopedResource() else {
+            logger.error("Security scope access failed for \(library.id ?? -1)")
+            return nil
+        }
+        defer { resolvedURL.stopAccessingSecurityScopedResource() }
+
+        return resolvedURL.appendingPathComponent(relativePath)
+    }
+    // MARK: - Create a bookmark
+    private func createBookmark(for fileURL: URL) throws -> Data {
+        try fileURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+    }
+
+    // MARK: - Read metadata (iOS 16+)
     @available(iOS 16.0, *)
     func readMetadataAVAsset(url: URL) async -> (artist: String, title: String, album: String) {
         let asset = AVURLAsset(url: url)
-
-        // In iOS 16+, we load metadata asynchronously
-        // This replaces the old 'commonMetadata' property
-        let metadataItems: [AVMetadataItem]
         do {
-            metadataItems = try await asset.load(.metadata)
+            let metadata = try await asset.load(.metadata)
+            var artist = ""
+            var title = ""
+            var album = ""
+
+            for item in metadata {
+                guard let commonKey = item.commonKey else { continue }
+                switch commonKey {
+                case .commonKeyArtist:
+                    if let val = try? await item.load(.stringValue) { artist = val }
+                case .commonKeyTitle:
+                    if let val = try? await item.load(.stringValue) { title = val }
+                case .commonKeyAlbumName:
+                    if let val = try? await item.load(.stringValue) { album = val }
+                default:
+                    break
+                }
+            }
+            return (artist, title, album)
         } catch {
-            // If loading fails for some reason, return empty strings
-            print("Failed to load metadata: \(error)")
+            logger.error("Failed to read metadata: \(error)")
             return ("", "", "")
         }
+    }
 
-        var artist = ""
-        var title = ""
-        var album = ""
-
-        // We iterate through metadata items, checking their commonKey
-        for item in metadataItems {
-            // 'commonKey' is also asynchronously loaded in iOS 16.0+
-            guard let commonKey = item.commonKey else { continue }
-
-            switch commonKey {
-            case .commonKeyArtist:
-                // load the stringValue asynchronously
-                if let val = try? await item.load(.stringValue) {
-                    artist = val
+    // MARK: - Extract cover art data
+    /// This checks for typical iTunes/ID3 "artwork" items and returns the first found.
+    @available(iOS 16.0, *)
+    private func extractCoverArtData(url: URL) async -> Data? {
+        let asset = AVURLAsset(url: url)
+        do {
+            let metadata = try await asset.load(.metadata)
+            // Sometimes "artwork" can be found in ID3 metadata or iTunes metadata.
+            for item in metadata {
+                if let keySpace = item.keySpace, keySpace == .id3 || keySpace == .iTunes {
+                    if let dataValue = try? await item.load(.dataValue) {
+                        return dataValue
+                    }
                 }
-            case .commonKeyTitle:
-                if let val = try? await item.load(.stringValue) {
-                    title = val
-                }
-            case .commonKeyAlbumName:
-                if let val = try? await item.load(.stringValue) {
-                    album = val
-                }
-            default:
-                break
             }
+        } catch {
+            logger.error("extractCoverArtData error: \(error)")
         }
-
-        return (artist, title, album)
+        return nil
     }
 
-    // MARK: - Create a bookmark
-    private func createBookmark(for fileURL: URL) throws -> Data {
-        let data = try fileURL.bookmarkData(
-            options: [],
-            includingResourceValuesForKeys: nil,
-            relativeTo: nil
-        )
-        return data
-    }
+    // MARK: - Store cover art on disk, but deduplicate by hash
+    private func storeCoverArtOnDiskDedup(_ data: Data?) throws -> String? {
+        guard let data = data, !data.isEmpty else { return nil }
 
-    /// Resolves the absolute file URL from a Library + LibraryPath.
-    /// Assumes `library.dirPath` is the root folder's path on disk.
-    /// Then appends `LibraryPath.relativePath`.
-    private func resolveFileURL(for p: LibraryPath) -> URL? {
-        // Example: you combine your app's Documents directory with p.relativePath
+        let hashString = sha256(data).map { String(format: "%02x", $0) }.joined()
+        let filename = "cover-\(hashString).jpg"
+
         guard
             let documentsDir = FileManager.default.urls(
                 for: .documentDirectory, in: .userDomainMask
@@ -377,51 +494,36 @@ actor SongImporter {
         else {
             return nil
         }
+        let coverArtDir = documentsDir.appendingPathComponent("CoverArt", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: coverArtDir.path) {
+            try FileManager.default.createDirectory(
+                at: coverArtDir, withIntermediateDirectories: true)
+        }
+        let fileURL = coverArtDir.appendingPathComponent(filename)
 
-        // Suppose relativePath is something like "audio/someSong.mp3".
-        // Then final path is Documents/audio/someSong.mp3
-        let fileURL = documentsDir.appendingPathComponent(p.relativePath)
-        return fileURL
+        // If file doesn't already exist, write it
+        if !FileManager.default.fileExists(atPath: fileURL.path) {
+            try data.write(to: fileURL)
+        }
+        // Return relative path
+        return "CoverArt/\(filename)"
     }
 
-    // MARK: - Store cover art in Documents/CoverArt
-    private func storeCoverArtOnDisk(_ data: Data) -> String? {
-        do {
-            // 1) Get Documents
-            guard
-                let documentsDir = FileManager.default.urls(
-                    for: .documentDirectory, in: .userDomainMask
-                ).first
-            else {
-                return nil
-            }
-
-            // 2) Create a subfolder “CoverArt” if it doesn’t exist
-            let coverArtDir = documentsDir.appendingPathComponent("CoverArt", isDirectory: true)
-            if !FileManager.default.fileExists(atPath: coverArtDir.path) {
-                try FileManager.default.createDirectory(
-                    at: coverArtDir, withIntermediateDirectories: true)
-            }
-
-            // 3) Make a unique filename
-            let filename = "cover-\(UUID().uuidString).jpg"
-            let fileURL = coverArtDir.appendingPathComponent(filename)
-
-            // 4) Write data
-            try data.write(to: fileURL)
-
-            // 5) Return the relative path or just the filename
-            // E.g., "CoverArt/cover-xxxx.jpg"
-            let relativeCoverPath = "CoverArt/\(filename)"
-            return relativeCoverPath
-
-        } catch {
-            print("Could not store cover art: \(error)")
-            return nil
-        }
+    // MARK: - Utility: SHA256 for Data
+    private func sha256(_ data: Data) -> Data {
+        // If you're on iOS 13+, you can use CryptoKit. For brevity:
+        var hasher = CryptoKit.SHA256()
+        hasher.update(data: data)
+        return Data(hasher.finalize())
     }
 }
-
+func preprocessFTSQuery(_ input: String) -> String {
+    input
+        .components(separatedBy: .whitespacesAndNewlines)
+        .filter { !$0.isEmpty }
+        .map { "\($0)*" }
+        .joined(separator: " ")
+}
 actor DefaultLibraryImportService: LibraryImportService {
     let logger = Logger(subsystem: subsystem, category: "LibraryImportService")
     func listItems(libraryId: Int64, parentPathId: Int64?) async throws -> [LibraryPath] {
@@ -1283,7 +1385,7 @@ extension LibraryPath {
 
 actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
     func search(libraryId: Int64, query: String, limit: Int) async throws -> [PathSearchResult] {
-        let matchString = query
+        let processedQuery = preprocessFTSQuery(query)
 
         let sql = """
             SELECT pathId, bm25(library_paths_fts) AS rank
@@ -1295,7 +1397,7 @@ actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
             """
 
         var results: [PathSearchResult] = []
-        for row in try db.prepare(sql, matchString, libraryId, limit) {
+        for row in try db.prepare(sql, processedQuery, libraryId, limit) {
             let pathId = row[0] as? Int64 ?? 0
             let rank = row[1] as? Double ?? 0.0
             results.append(PathSearchResult(pathId: pathId, rank: rank))
@@ -1368,7 +1470,7 @@ actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
                 runId UNINDEXED,
                 fullPath,
                 fileName,
-                tokenize='porter'
+                tokenize='unicode61'
             );
             """)
     }
@@ -1448,7 +1550,7 @@ actor SQLiteSongRepository: SongRepository {
                 artist,
                 title,
                 album,
-                tokenize='porter'
+                tokenize='unicode61'
             );
             """)
     }
@@ -1524,18 +1626,38 @@ actor SQLiteSongRepository: SongRepository {
     func searchSongsFTS(query: String, limit: Int) async throws -> [Song] {
         // We'll do a raw SQL statement to get bm25 ordering if needed.
         // We store date as Double, bookmark as Blob, so let's parse them carefully.
-        let sql = """
-            SELECT s.id, s.songKey, s.artist, s.title, s.album,
-                   s.coverArtPath, s.bookmark, s.createdAt, s.updatedAt
-              FROM songs s
-              JOIN songs_fts fts ON s.id = fts.songId
-             WHERE songs_fts MATCH ?
-             ORDER BY bm25(songs_fts)
-             LIMIT ?;
-            """
-
         var results = [Song]()
-        let statement = try db.prepare(sql, query, limit)
+        let statement: Statement
+        let sql: String
+        let bindings: [Binding?]
+
+        if query.isEmpty {
+            // Handle empty query - return all songs with default ordering
+            sql = """
+                SELECT id, songKey, artist, title, album,
+                       coverArtPath, bookmark, createdAt, updatedAt
+                  FROM songs
+                 ORDER BY createdAt DESC
+                 LIMIT ?;
+                """
+            bindings = [limit]
+        } else {
+            // Handle normal FTS query
+            let processedQuery = preprocessFTSQuery(query)  // Preprocess here
+            sql = """
+                SELECT s.id, s.songKey, s.artist, s.title, s.album,
+                       s.coverArtPath, s.bookmark, s.createdAt, s.updatedAt
+                  FROM songs s
+                  JOIN songs_fts fts ON s.id = fts.songId
+                 WHERE songs_fts MATCH ?
+                 ORDER BY bm25(songs_fts)
+                 LIMIT ?;
+                """
+            bindings = [processedQuery, limit]
+        }
+
+        statement = try db.prepare(sql, bindings)
+
         for row in statement {
             // row[i] is an `any Binding?`, might be Int64, Double, String, Blob, or nil.
             // We parse carefully:

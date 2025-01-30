@@ -15,7 +15,7 @@ struct musicappApp: App {
 
     private func setupView() -> some View {
         do {
-            let schemaVersion = 5
+            let schemaVersion = 6
             let db = setupSQLiteConnection(dbName: "musicapp\(schemaVersion).sqlite")
             let userRepo = try SQLiteUserRepository(db: db!)
             let userService = DefaultUserService(userRepository: userRepo)
@@ -29,6 +29,9 @@ struct musicappApp: App {
                 libraryRepository: libraryRepo,
                 libraryPathSearchRepository: libraryPathSearchRepository,
                 libraryPathRepository: libraryPathRepository)
+          let songRepository = try SQLiteSongRepository(db: db!)
+          let songImportService = DefaultSongImportService(songRepo: songRepository,
+                                                           libraryPathRepo: libraryPathRepository, libraryRepo: libraryRepo)
             let libraryImportService = DefaultLibraryImportService(libraryPathRepository: libraryPathRepository, libraryPathSearchRepository: libraryPathSearchRepository)
             let libraryService = DefaultLibraryService(
                 libraryRepo: libraryRepo, librarySyncService: librarySyncService, libraryImportService: libraryImportService)
@@ -36,8 +39,11 @@ struct musicappApp: App {
                 userService: userService,
                 userCloudService: userCloudService,
                 icloudProvider: icloudProvider,
-                libraryService: libraryService)
-            return MainTabView(app: app)
+                libraryService: libraryService,
+                songRepository:  songRepository,
+                songImportService: songImportService)
+          let v: some View =  MainTabView(app: app)
+          return v
         } catch {
             return Text("Failed to initialize the app: \(error.localizedDescription)")
                 .foregroundColor(.red)

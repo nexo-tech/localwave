@@ -1,16 +1,251 @@
+import AVFoundation
 import SwiftUI
 import os
+
+struct MainTabView: View {
+    private let app: AppDependencies?
+    init(app: AppDependencies?) {
+        self.app = app
+    }
+    var body: some View {
+        TabView {
+            LibraryView().tabItem {
+                Label("Library", systemImage: "books.vertical")
+            }
+
+            // 2) A SongListView with search + tapping => play
+            if let songRepo = app?.songRepository {
+                SongListView(songRepo: songRepo)
+                    .tabItem {
+                        Label("All Songs", systemImage: "music.note.list")
+                    }
+            }
+
+            // 3) Simple player
+            PlayerView()
+                .tabItem {
+                    Label("Player", systemImage: "play.circle")
+                }
+
+            VStack {
+                SyncView(
+                    userCloudService: app?.userCloudService,
+                    icloudProvider: app?.icloudProvider,
+                    libraryService: app?.libraryService,
+                    songImportService: app?.songImportService)
+            }.tabItem {
+                Label("Sync", systemImage: "icloud.and.arrow.down")
+            }
+        }.accentColor(.orange)
+    }
+}
+
+struct SongListView: View {
+    @StateObject private var viewModel: SongListViewModel
+    @State private var searchTerm: String = ""
+
+    init(songRepo: SongRepository) {
+        _viewModel = StateObject(wrappedValue: SongListViewModel(songRepo: songRepo))
+    }
+
+    var body: some View {
+        VStack {
+            TextField(
+                "Search songs...", text: $searchTerm,
+                onCommit: {
+                    Task { await viewModel.searchSongs(query: searchTerm) }
+                }
+            )
+            .textFieldStyle(.roundedBorder)
+            .padding()
+
+            List(viewModel.songs, id: \.id) { song in
+                HStack {
+                    Text("\(song.title) - \(song.artist)")
+                    Spacer()
+                    if let coverArt = song.coverArtPath {
+                        // Show a small cover image if you like
+                        Image(uiImage: viewModel.image(for: coverArt) ?? UIImage())
+                            .resizable()
+                            .frame(width: 40, height: 40)
+                            .cornerRadius(4)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    // On tap => start playback
+                    viewModel.play(song: song)
+                }
+            }
+        }
+        .onAppear {
+            Task { await viewModel.loadAll() }
+        }
+    }
+}
+
+@MainActor
+class SongListViewModel: ObservableObject {
+    @Published var songs: [Song] = []
+    private let songRepo: SongRepository
+    private var playerVM = PlayerViewModel.shared
+
+    init(songRepo: SongRepository) {
+        self.songRepo = songRepo
+    }
+
+    func loadAll() async {
+        do {
+            // For a quick approach, if you have a method to get all songs from DB:
+            let allSongs = try await songRepo.searchSongsFTS(query: "", limit: 9999)
+            self.songs = allSongs
+        } catch {
+            print("Song loading error: \(error)")
+        }
+    }
+
+    func searchSongs(query: String) async {
+        do {
+            let found = try await songRepo.searchSongsFTS(query: query, limit: 100)
+            self.songs = found
+        } catch {
+            print("Search error: \(error)")
+        }
+    }
+
+    func play(song: Song) {
+        playerVM.playSong(song)
+    }
+
+    // Example local image loading for covers in Documents
+    func image(for coverArtPath: String) -> UIImage? {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let imageURL = docs.appendingPathComponent(coverArtPath)
+        if let data = try? Data(contentsOf: imageURL),
+            let image = UIImage(data: data)
+        {
+            return image
+        }
+        return nil
+    }
+}
+
+@MainActor
+class PlayerViewModel: ObservableObject {
+    static let shared = PlayerViewModel()
+
+    @Published var currentSong: Song?
+    @Published var isPlaying = false
+    private var player: AVAudioPlayer?
+
+    func playSong(_ song: Song) {
+        // We'll try to load from the bookmark or local URL
+        guard let url = resolveSongURL(song),
+            let audioPlayer = try? AVAudioPlayer(contentsOf: url)
+        else {
+            print("Can't load song URL.")
+            return
+        }
+        player = audioPlayer
+        currentSong = song
+        isPlaying = true
+        audioPlayer.play()
+    }
+
+    func stop() {
+        player?.stop()
+        isPlaying = false
+    }
+
+    func nextSong() {
+        // For demo: just stop
+        stop()
+    }
+
+    private func resolveSongURL(_ song: Song) -> URL? {
+        // If you stored a bookmark, you can resolve it:
+        if let bookmarkData = song.bookmark {
+            var isStale = false
+            do {
+                let resolvedURL = try URL(
+                    resolvingBookmarkData: bookmarkData,
+                    options: .withoutUI,
+                    relativeTo: nil,
+                    bookmarkDataIsStale: &isStale
+                )
+                return resolvedURL
+            } catch {
+                print("Bookmark error: \(error)")
+                return nil
+            }
+        }
+        return nil
+    }
+}
+
+struct PlayerView: View {
+    @StateObject private var vm = PlayerViewModel.shared
+
+    var body: some View {
+        VStack(spacing: 20) {
+            if let song = vm.currentSong {
+                Text("Now playing: \(song.title)")
+                    .font(.headline)
+                if let cover = coverArt(of: song) {
+                    Image(uiImage: cover)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 200, height: 200)
+                        .cornerRadius(8)
+                }
+                HStack {
+                    Button(action: { vm.stop() }) {
+                        Image(systemName: "stop.fill")
+                    }
+                    Button(action: { vm.nextSong() }) {
+                        Image(systemName: "forward.fill")
+                    }
+                }
+                .font(.largeTitle)
+            } else {
+                Text("No song playing")
+                    .font(.headline)
+                    .padding()
+            }
+        }
+    }
+
+    private func coverArt(of song: Song) -> UIImage? {
+        guard let coverArtPath = song.coverArtPath else { return nil }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let coverURL = docs.appendingPathComponent(coverArtPath)
+        if let data = try? Data(contentsOf: coverURL),
+            let image = UIImage(data: data)
+        {
+            return image
+        }
+        return nil
+    }
+}
+struct LibraryView: View {
+    var body: some View {
+        // should list all songs with search
+        // when song is selected, starts playing it
+        Text("library").font(.largeTitle).foregroundColor(.purple)
+    }
+}
+
 @MainActor
 class LibraryBrowseViewModel: ObservableObject {
     private let service: LibraryImportService
     private let libraryId: Int64
-    
+
     /// A stack of visited parentPathIds; the last element is the "current folder."
     @Published private var pathStack: [Int64?] = [nil]
 
     @Published var items: [LibraryPath] = []
     @Published var searchTerm: String = ""
-    
+
     /// For checkboxes on any item (folders or files).
     @Published var selectedPathIds = Set<Int64>()
 
@@ -35,7 +270,8 @@ class LibraryBrowseViewModel: ObservableObject {
     func loadItems() async {
         do {
             if searchTerm.isEmpty {
-                items = try await service.listItems(libraryId: libraryId, parentPathId: parentPathId)
+                items = try await service.listItems(
+                    libraryId: libraryId, parentPathId: parentPathId)
             } else {
                 items = try await service.search(libraryId: libraryId, query: searchTerm)
             }
@@ -70,10 +306,22 @@ class LibraryBrowseViewModel: ObservableObject {
 }
 struct LibraryBrowseView: View {
     @StateObject var viewModel: LibraryBrowseViewModel
+    // NEW:
+    @State private var showImportProgress = false
+    @State private var importProgress: Double = 0
+    @State private var currentFileName: String = ""
+    @State private var isImporting = false
 
-    init(libraryId: Int64,
-         parentPathId: Int64? = nil,
-         libraryImportService: LibraryImportService) {
+    // Add a reference to your SongImportService somehow
+    // For example, you can pass it in or get it from AppDependencies
+    let songImportService: SongImportService
+
+    init(
+        libraryId: Int64,
+        parentPathId: Int64? = nil,
+        libraryImportService: LibraryImportService,
+        songImportService: SongImportService
+    ) {
         _viewModel = StateObject(
             wrappedValue: LibraryBrowseViewModel(
                 service: libraryImportService,
@@ -81,10 +329,11 @@ struct LibraryBrowseView: View {
                 initialParentPathId: parentPathId
             )
         )
+      self.songImportService = songImportService
     }
 
     var body: some View {
-        NavigationView {
+      VStack {
             VStack {
                 // Top bar with optional "Back" button
                 HStack {
@@ -95,8 +344,45 @@ struct LibraryBrowseView: View {
                         .padding(.leading)
                     }
                     Spacer()
+                    if viewModel.selectedPathIds.count > 0 {
+                        Button("Import \(viewModel.selectedPathIds.count) items") {
+                            Task {
+                                isImporting = true
+                                showImportProgress = true
+                                do {
+                                    // Filter out selected library paths
+                                    let selectedPaths = viewModel.items.filter {
+                                        viewModel.selectedPathIds.contains($0.pathId)
+                                    }
+                                    // Call your import service
+                                    try await songImportService.importPaths(
+                                        paths: selectedPaths,
+                                        onProgress: { pct, fileURL in
+                                            await MainActor.run {
+                                                importProgress = pct
+                                                currentFileName = fileURL.lastPathComponent
+                                            }
+                                        }
+                                    )
+                                } catch {
+                                    print("Import error: \(error)")
+                                }
+                                isImporting = false
+                            }
+                        }
+                    }
                 }
-                
+                // Optional progress bar or text
+                if showImportProgress {
+                    VStack {
+                        Text("Importing \(currentFileName) ...")
+                        ProgressView(value: importProgress, total: 100)
+                    }
+                    .padding()
+                    .onChange(of: isImporting) { newVal in
+                        if newVal == false { showImportProgress = false }
+                    }
+                }
                 // Search bar
                 TextField("Search...", text: $viewModel.searchTerm)
                     .textFieldStyle(.roundedBorder)
@@ -128,13 +414,14 @@ struct LibraryBrowseView: View {
                         Button {
                             viewModel.toggleSelection(item.pathId)
                         } label: {
-                            Image(systemName: viewModel.selectedPathIds.contains(item.pathId)
-                                  ? "checkmark.square"
-                                  : "square")
+                            Image(
+                                systemName: viewModel.selectedPathIds.contains(item.pathId)
+                                    ? "checkmark.square"
+                                    : "square")
                         }
                         .buttonStyle(BorderlessButtonStyle())
                     }
-                    .contentShape(Rectangle()) // Entire row is tappable
+                    .contentShape(Rectangle())  // Entire row is tappable
                     .onTapGesture {
                         if item.isDirectory {
                             viewModel.goIntoFolder(with: item.pathId)
@@ -210,16 +497,19 @@ struct SyncView: View {
 
     private let logger = Logger(subsystem: subsystem, category: "SyncView")
 
+    private let songImportService: SongImportService?
     init(
         userCloudService: UserCloudService?,
         icloudProvider: ICloudProvider?,
-        libraryService: LibraryService?
+        libraryService: LibraryService?,
+        songImportService: SongImportService?
     ) {
         _syncViewModel = StateObject(
             wrappedValue: SyncViewModel(
                 userCloudService: userCloudService,
                 icloudProvider: icloudProvider,
                 libraryService: libraryService))
+      self.songImportService = songImportService
     }
 
     var body: some View {
@@ -314,9 +604,16 @@ struct SyncView: View {
                     {
                         let libraryId = library.id
                         let parentPathId = hashStringToInt64(library.dirPath)
+                      if let songImportService = songImportService {
                         LibraryBrowseView(
-                            libraryId: libraryId!, parentPathId: parentPathId,
-                            libraryImportService: ls.importService())
+                            libraryId: libraryId!,
+                            parentPathId: parentPathId,
+                            libraryImportService: ls.importService(),
+                            songImportService: songImportService)
+                      } else {
+                        Text("song import service is not avaialabe")
+                      }
+                        
                     }
                 }
             case .syncInProgress:
@@ -499,8 +796,4 @@ class SyncViewModel: ObservableObject {
             }
         }
     }
-}
-
-#Preview {
-    SyncView(userCloudService: nil, icloudProvider: nil, libraryService: nil)
 }
