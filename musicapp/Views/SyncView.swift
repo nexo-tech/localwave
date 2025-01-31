@@ -114,7 +114,8 @@ class SongListViewModel: ObservableObject {
     }
 
     func play(song: Song) {
-        playerVM.playSong(song)
+      playerVM.configureQueue(songs: songs, startIndex: songs.firstIndex(where: { $0.id == song.id }) ?? 0)
+          playerVM.playSong(song)
     }
 
     // Example local image loading for covers in Documents
@@ -131,57 +132,145 @@ class SongListViewModel: ObservableObject {
 }
 
 @MainActor
-class PlayerViewModel: ObservableObject {
+class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayerDelegate {
     static let shared = PlayerViewModel()
+    private override init() {
+      super.init()
+    }  // NSObject requires this
 
     @Published var currentSong: Song?
     @Published var isPlaying = false
+    @Published var playbackProgress: Double = 0
+    @Published var currentTime: String = "0:00"
+    @Published var duration: String = "0:00"
+
     private var player: AVAudioPlayer?
+    private var timer: Timer?
+    private var songs: [Song] = []
+    private var currentIndex: Int = 0
+  func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+      nextSong()
+  }
+    func configureQueue(songs: [Song], startIndex: Int) {
+        self.songs = songs
+        self.currentIndex = startIndex
+        self.currentSong = songs[safe: startIndex]
+    }
 
     func playSong(_ song: Song) {
-        // We'll try to load from the bookmark or local URL
+        stop()
+
         guard let url = resolveSongURL(song),
             let audioPlayer = try? AVAudioPlayer(contentsOf: url)
         else {
             print("Can't load song URL.")
             return
         }
+
         player = audioPlayer
         currentSong = song
+        player?.delegate = self
+        updateTimeDisplay()
+
+        play()
+    }
+
+    func playPause() {
+        if isPlaying {
+            pause()
+        } else {
+            play()
+        }
+    }
+
+    private func play() {
+        player?.play()
         isPlaying = true
-        audioPlayer.play()
+        startTimer()
+    }
+
+    private func pause() {
+        player?.pause()
+        isPlaying = false
+        stopTimer()
     }
 
     func stop() {
         player?.stop()
         isPlaying = false
+        playbackProgress = 0
+        stopTimer()
+    }
+
+    func previousSong() {
+        guard !songs.isEmpty else { return }
+        currentIndex = (currentIndex - 1 + songs.count) % songs.count
+        playSong(songs[currentIndex])
     }
 
     func nextSong() {
-        // For demo: just stop
-        stop()
+        guard !songs.isEmpty else { return }
+        currentIndex = (currentIndex + 1) % songs.count
+        playSong(songs[currentIndex])
+    }
+
+    func seek(to progress: Double) {
+        guard let player = player else { return }
+        player.currentTime = Double(progress) * player.duration
+        updateTimeDisplay()
+    }
+
+
+  private func startTimer() {
+      timer = Timer.scheduledTimer(
+          withTimeInterval: 0.1,
+          repeats: true
+      ) { [weak self] _ in
+          Task { @MainActor [weak self] in
+              self?.updateTimeDisplay()
+          }
+      }
+      
+      // Ensure timer runs on main run loop
+      RunLoop.main.add(timer!, forMode: .common)
+  }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
+    }
+
+    private func updateTimeDisplay() {
+        guard let player = player else { return }
+
+        playbackProgress = player.currentTime / player.duration
+        currentTime = formatTime(player.currentTime)
+        duration = formatTime(player.duration)
+    }
+
+    private func formatTime(_ time: TimeInterval) -> String {
+        let minutes = Int(time) / 60
+        let seconds = Int(time) % 60
+        return String(format: "%d:%02d", minutes, seconds)
     }
 
     private func resolveSongURL(_ song: Song) -> URL? {
-        // If you stored a bookmark, you can resolve it:
-        if let bookmarkData = song.bookmark {
-            var isStale = false
-            do {
-                let resolvedURL = try URL(
-                    resolvingBookmarkData: bookmarkData,
-                    options: .withoutUI,
-                    relativeTo: nil,
-                    bookmarkDataIsStale: &isStale
-                )
-                return resolvedURL
-            } catch {
-                print("Bookmark error: \(error)")
-                return nil
-            }
+        guard let bookmarkData = song.bookmark else { return nil }
+
+        var isStale = false
+        do {
+            return try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withoutUI,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale)
+        } catch {
+            print("Bookmark error: \(error)")
+            return nil
         }
-        return nil
     }
 }
+
 
 struct PlayerView: View {
     @StateObject private var vm = PlayerViewModel.shared
@@ -189,29 +278,87 @@ struct PlayerView: View {
     var body: some View {
         VStack(spacing: 20) {
             if let song = vm.currentSong {
-                Text("Now playing: \(song.title)")
-                    .font(.headline)
-                if let cover = coverArt(of: song) {
-                    Image(uiImage: cover)
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: 200, height: 200)
-                        .cornerRadius(8)
-                }
-                HStack {
-                    Button(action: { vm.stop() }) {
-                        Image(systemName: "stop.fill")
-                    }
-                    Button(action: { vm.nextSong() }) {
-                        Image(systemName: "forward.fill")
-                    }
-                }
-                .font(.largeTitle)
+                songInfoView(song: song)
+                progressView()
+                controlsView()
             } else {
-                Text("No song playing")
-                    .font(.headline)
-                    .padding()
+                emptyStateView()
             }
+        }
+        .padding()
+    }
+
+    private func songInfoView(song: Song) -> some View {
+        VStack {
+            Text(song.title)
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text(song.artist)
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            if let cover = coverArt(of: song) {
+                Image(uiImage: cover)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 200, height: 200)
+                    .cornerRadius(8)
+                    .padding(.vertical)
+            }
+        }
+    }
+
+    private func progressView() -> some View {
+        VStack {
+            Slider(value: $vm.playbackProgress, in: 0...1) { editing in
+                if !editing {
+                    vm.seek(to: vm.playbackProgress)
+                }
+            }
+            .accentColor(.purple)
+
+            HStack {
+                Text(vm.currentTime)
+                Spacer()
+                Text(vm.duration)
+            }
+            .font(.caption)
+            .foregroundColor(.secondary)
+        }
+    }
+
+    private func controlsView() -> some View {
+        HStack(spacing: 40) {
+            Button(action: vm.previousSong) {
+                Image(systemName: "backward.fill")
+                    .font(.title)
+            }
+
+            Button(action: vm.playPause) {
+                Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 40))
+                    .frame(width: 60, height: 60)
+            }
+
+            Button(action: vm.nextSong) {
+                Image(systemName: "forward.fill")
+                    .font(.title)
+            }
+        }
+        .foregroundColor(.primary)
+    }
+
+    private func emptyStateView() -> some View {
+        VStack {
+            Text("No song playing")
+                .font(.headline)
+                .padding()
+
+            Image(systemName: "music.note")
+                .font(.system(size: 60))
+                .foregroundColor(.secondary)
+                .padding()
         }
     }
 
@@ -219,14 +366,16 @@ struct PlayerView: View {
         guard let coverArtPath = song.coverArtPath else { return nil }
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
         let coverURL = docs.appendingPathComponent(coverArtPath)
-        if let data = try? Data(contentsOf: coverURL),
-            let image = UIImage(data: data)
-        {
-            return image
-        }
-        return nil
+        return UIImage(contentsOfFile: coverURL.path)
     }
 }
+
+extension Collection {
+    subscript(safe index: Index) -> Element? {
+        return indices.contains(index) ? self[index] : nil
+    }
+}
+
 struct LibraryView: View {
     var body: some View {
         // should list all songs with search
@@ -329,11 +478,11 @@ struct LibraryBrowseView: View {
                 initialParentPathId: parentPathId
             )
         )
-      self.songImportService = songImportService
+        self.songImportService = songImportService
     }
 
     var body: some View {
-      VStack {
+        VStack {
             VStack {
                 // Top bar with optional "Back" button
                 HStack {
@@ -509,7 +658,7 @@ struct SyncView: View {
                 userCloudService: userCloudService,
                 icloudProvider: icloudProvider,
                 libraryService: libraryService))
-      self.songImportService = songImportService
+        self.songImportService = songImportService
     }
 
     var body: some View {
@@ -604,16 +753,16 @@ struct SyncView: View {
                     {
                         let libraryId = library.id
                         let parentPathId = hashStringToInt64(library.dirPath)
-                      if let songImportService = songImportService {
-                        LibraryBrowseView(
-                            libraryId: libraryId!,
-                            parentPathId: parentPathId,
-                            libraryImportService: ls.importService(),
-                            songImportService: songImportService)
-                      } else {
-                        Text("song import service is not avaialabe")
-                      }
-                        
+                        if let songImportService = songImportService {
+                            LibraryBrowseView(
+                                libraryId: libraryId!,
+                                parentPathId: parentPathId,
+                                libraryImportService: ls.importService(),
+                                songImportService: songImportService)
+                        } else {
+                            Text("song import service is not avaialabe")
+                        }
+
                     }
                 }
             case .syncInProgress:
