@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import MediaPlayer
 import SwiftUI
 import os
 
@@ -41,13 +42,11 @@ struct SearchBar: View {
                     self.isEditing = true
                 }
                 .onChange(of: text) {
-                    print("Text changed: \(text)")
                     textSubject.send(text)
                 }
         }
         .onReceive(textSubject.debounce(for: .seconds(debounceSeconds), scheduler: RunLoop.main)) {
             debouncedValue in
-            print("Debounced change called: \(debouncedValue)")
             onChange(debouncedValue)
         }
     }
@@ -309,21 +308,18 @@ struct MiniPlayerView: View {
             .buttonStyle(PlainButtonStyle())
         }
     }
+}
 
-    private func coverArt(of song: Song) -> UIImage? {
-        guard let coverArtPath = song.coverArtPath else { return nil }
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let coverURL = docs.appendingPathComponent(coverArtPath)
-        return UIImage(contentsOfFile: coverURL.path)
-    }
+func coverArt(of song: Song) -> UIImage? {
+    guard let coverArtPath = song.coverArtPath else { return nil }
+    let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+    let coverURL = docs.appendingPathComponent(coverArtPath)
+    return UIImage(contentsOfFile: coverURL.path)
 }
 
 @MainActor
 class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayerDelegate {
     static let shared = PlayerViewModel()
-    private override init() {
-        super.init()
-    }  // NSObject requires this
 
     @Published var currentSong: Song?
     @Published var isPlaying = false
@@ -344,13 +340,112 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         self.currentSong = songs[safe: startIndex]
     }
 
+    var logger = Logger(subsystem: subsystem, category: "PlayerViewModel")
+
+    private func setupAudioSession() {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            logger.error("audio session setup error: \(error)")
+        }
+    }
+
+    private func setupRemoteCommands() {
+        let commandCenter = MPRemoteCommandCenter.shared()
+        commandCenter.playCommand.addTarget { [weak self] _ in
+            self?.play()
+            return .success
+        }
+        commandCenter.pauseCommand.addTarget { [weak self] _ in
+            self?.pause()
+            return .success
+        }
+
+        commandCenter.nextTrackCommand.addTarget { [weak self] _ in
+            self?.nextSong()
+            return .success
+        }
+
+        commandCenter.previousTrackCommand.addTarget { [weak self] _ in
+            self?.previousSong()
+            return .success
+        }
+        commandCenter.changePlaybackPositionCommand.addTarget { [weak self] event in
+            if let event = event as? MPChangePlaybackPositionCommandEvent {
+                self?.seek(to: event.positionTime)
+            }
+            return .success
+        }
+
+        // Enable commands
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.nextTrackCommand.isEnabled = true
+        commandCenter.previousTrackCommand.isEnabled = true
+        commandCenter.changePlaybackPositionCommand.isEnabled = true
+    }
+
+    func updateNowPlayingInfo() {
+        guard let song = currentSong, let player = player else { return }
+
+        var nowPlayingInfo = [String: Any]()
+        nowPlayingInfo[MPMediaItemPropertyTitle] = song.title
+        nowPlayingInfo[MPMediaItemPropertyArtist] = song.artist
+        nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = song.album
+        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = player.currentTime
+        nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = player.duration
+        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? player.rate : 0.0
+
+        if let artwork = coverArt(of: song) {
+            let mpArtwork = MPMediaItemArtwork(boundsSize: artwork.size) { _ in artwork }
+            nowPlayingInfo[MPMediaItemPropertyArtwork] = mpArtwork
+        }
+
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
+    }
+
+    private func setupInterruptionObserver() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: nil
+        )
+    }
+
+    @objc private func handleInterruption(notification: Notification) {
+        guard let info = notification.userInfo,
+            let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+            let type = AVAudioSession.InterruptionType(rawValue: typeValue)
+        else { return }
+
+        if type == .began {
+            pause()
+        } else if type == .ended {
+            if let optionsValue = info[AVAudioSessionInterruptionOptionKey] as? UInt {
+                let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue)
+                if options.contains(.shouldResume) {
+                    play()
+                }
+            }
+        }
+    }
+
+    private override init() {
+        super.init()
+        setupAudioSession()
+        setupRemoteCommands()
+        setupInterruptionObserver()
+    }
+
     func playSong(_ song: Song) {
         stop()
 
         guard let url = resolveSongURL(song),
             let audioPlayer = try? AVAudioPlayer(contentsOf: url)
         else {
-            print("Can't load song URL.")
+            logger.error("Can't load song URL.")
             return
         }
 
@@ -360,6 +455,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         updateTimeDisplay()
 
         play()
+        updateNowPlayingInfo()
     }
 
     func playPause() {
@@ -374,12 +470,14 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         player?.play()
         isPlaying = true
         startTimer()
+        updateNowPlayingInfo()
     }
 
     private func pause() {
         player?.pause()
         isPlaying = false
         stopTimer()
+        updateNowPlayingInfo()
     }
 
     func stop() {
@@ -432,6 +530,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         playbackProgress = player.currentTime / player.duration
         currentTime = formatTime(player.currentTime)
         duration = formatTime(player.duration)
+        updateNowPlayingInfo()
     }
 
     private func formatTime(_ time: TimeInterval) -> String {
@@ -451,7 +550,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale)
         } catch {
-            print("Bookmark error: \(error)")
+            logger.error("Bookmark error: \(error)")
             return nil
         }
     }
@@ -471,6 +570,14 @@ struct PlayerView: View {
             }
         }
         .padding()
+        .onAppear {
+            vm.updateNowPlayingInfo()
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
+        ) { _ in
+            vm.updateNowPlayingInfo()
+        }
     }
 
     private func songInfoView(song: Song) -> some View {
@@ -620,9 +727,11 @@ class LibraryBrowseViewModel: ObservableObject {
                 items = try await service.search(libraryId: libraryId, query: searchTerm)
             }
         } catch {
-            print("Load items error: \(error)")
+            logger.error("Load items error: \(error)")
         }
     }
+
+    let logger = Logger(subsystem: subsystem, category: "LibraryBrowseViewModel")
 
     /// Navigate into a subfolder (push on stack).
     func goIntoFolder(with pathId: Int64) {
@@ -674,6 +783,7 @@ struct LibraryBrowseView: View {
         self.songImportService = songImportService
     }
 
+    private var logger = Logger(subsystem: subsystem, category: "LibraryBrowseView")
     var body: some View {
         VStack {
             VStack {
@@ -719,7 +829,7 @@ struct LibraryBrowseView: View {
                                     // Clear selection only if completed successfully
                                     viewModel.selectedPathIds = []
                                 } catch {
-                                    print("Import error: \(error)")
+                                    logger.error("Import error: \(error)")
                                     // Don't clear selection if cancelled
                                     if !(error is CancellationError) {
                                         viewModel.selectedPathIds = []
@@ -1078,7 +1188,7 @@ class SyncViewModel: ObservableObject {
 
     func registerBookmark(_ folderURL: URL) throws {
         guard folderURL.startAccessingSecurityScopedResource() else {
-            print("Unable to access security scoped resource.")
+            logger.error("Unable to access security scoped resource.")
             return
         }
         defer { folderURL.stopAccessingSecurityScopedResource() }
@@ -1163,8 +1273,26 @@ class SyncViewModel: ObservableObject {
     }
 }
 
+class AppDelegate: NSObject, UIApplicationDelegate {
+    let logger = Logger(subsystem: subsystem, category: "AppDelegate")
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        do {
+            try AVAudioSession.sharedInstance().setCategory(.playback)
+            try AVAudioSession.sharedInstance().setActive(true)
+        } catch {
+            logger.error("Audio session setup error: \(error)")
+        }
+        return true
+    }
+}
+
 @main
 struct musicappApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     var body: some Scene {
         let app = setupApp()
         WindowGroup {
