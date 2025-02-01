@@ -173,7 +173,8 @@ protocol SongRepository {
 
     /// Full-text search by artist/title/album, returning at most `limit` songs,
     /// ordered by `bm25(...)`.
-    func searchSongsFTS(query: String, limit: Int) async throws -> [Song]
+    func searchSongsFTS(query: String, limit: Int, offset: Int) async throws -> [Song]
+    func totalSongCount(query: String) async throws -> Int
 }
 
 protocol LibraryImportService {
@@ -1584,6 +1585,7 @@ actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
 }
 
 actor SQLiteSongRepository: SongRepository {
+
     private let db: Connection
 
     // MARK: - Main "songs" table
@@ -1661,6 +1663,34 @@ actor SQLiteSongRepository: SongRepository {
             """)
     }
 
+    func totalSongCount(query: String) async throws -> Int {
+        if query.isEmpty {
+            let countQuery = "SELECT COUNT(*) FROM songs;"
+            var count: Int = 0
+            for row in try db.prepare(countQuery) {
+                if let c = row[0] as? Int64 {
+                    count = Int(c)
+                    break
+                }
+            }
+            return count
+        } else {
+            let processedQuery = preprocessFTSQuery(query)
+            let countQuery = """
+                SELECT COUNT(*) FROM songs s
+                JOIN songs_fts fts ON s.id = fts.songId
+                WHERE songs_fts MATCH ?;
+                """
+            var count: Int = 0
+            for row in try db.prepare(countQuery, processedQuery) {
+                if let c = row[0] as? Int64 {
+                    count = Int(c)
+                    break
+                }
+            }
+            return count
+        }
+    }
     // MARK: - Upsert
     func upsertSong(_ song: Song) async throws -> Song {
         // We'll check if there's an existing row with the same "songKey"
@@ -1729,7 +1759,7 @@ actor SQLiteSongRepository: SongRepository {
     }
 
     // MARK: - FTS Searching
-    func searchSongsFTS(query: String, limit: Int) async throws -> [Song] {
+    func searchSongsFTS(query: String, limit: Int, offset: Int) async throws -> [Song] {
         // We'll do a raw SQL statement to get bm25 ordering if needed.
         // We store date as Double, bookmark as Blob, so let's parse them carefully.
         var results = [Song]()
@@ -1744,9 +1774,9 @@ actor SQLiteSongRepository: SongRepository {
                        coverArtPath, bookmark, createdAt, updatedAt
                   FROM songs
                  ORDER BY createdAt DESC
-                 LIMIT ?;
+                 LIMIT ? OFFSET ?;
                 """
-            bindings = [limit]
+            bindings = [limit, offset]
         } else {
             // Handle normal FTS query
             let processedQuery = preprocessFTSQuery(query)  // Preprocess here
@@ -1757,40 +1787,27 @@ actor SQLiteSongRepository: SongRepository {
                   JOIN songs_fts fts ON s.id = fts.songId
                  WHERE songs_fts MATCH ?
                  ORDER BY bm25(songs_fts)
-                 LIMIT ?;
+                 LIMIT ? OFFSET ?;
                 """
-            bindings = [processedQuery, limit]
+            bindings = [processedQuery, limit, offset]
         }
 
         statement = try db.prepare(sql, bindings)
 
         for row in statement {
-            // row[i] is an `any Binding?`, might be Int64, Double, String, Blob, or nil.
-            // We parse carefully:
-
-            // 0: s.id
             guard let id = row[0] as? Int64 else { continue }
-            // 1: s.songKey
             let songKey = (row[1] as? Int64) ?? 0
-            // 2: artist
             let artist = (row[2] as? String) ?? ""
-            // 3: title
             let title = (row[3] as? String) ?? ""
-            // 4: album
             let album = (row[4] as? String) ?? ""
-            // 5: coverArtPath
             let coverArtPath = row[5] as? String
-            // 6: bookmark => parse as Blob -> Data
             let bookmarkBlob = row[6] as? Blob
             let bookmarkData = bookmarkBlob.map { Data($0.bytes) }
-            // 7: createdAt => parse as Double -> Date
             let createdDouble = row[7] as? Double ?? 0
             let createdAt = Date(timeIntervalSince1970: createdDouble)
-            // 8: updatedAt => optional double
             let updatedDouble = row[8] as? Double
             let updatedAt = updatedDouble.map { Date(timeIntervalSince1970: $0) }
 
-            // Build a new Song
             let song = Song(
                 id: id,
                 songKey: songKey,
@@ -1807,4 +1824,3 @@ actor SQLiteSongRepository: SongRepository {
         return results
     }
 }
-

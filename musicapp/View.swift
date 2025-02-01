@@ -91,9 +91,112 @@ struct MainTabView: View {
     }
 }
 
+// MARK: - SongRow View
+struct SongRow: View {
+    let song: Song
+    let isPlaying: Bool
+    let onPlay: () -> Void
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(song.title)
+                    .font(.headline)
+                Text(song.artist)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            if isPlaying {
+                // This icon serves as a playing indicator.
+                Image(systemName: "speaker.wave.2.fill")
+                    .foregroundColor(.green)
+            }
+        }
+        .contentShape(Rectangle())  // Make the whole row tappable
+        .onTapGesture {
+            onPlay()
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Updated SongListViewModel
+@MainActor
+class SongListViewModel: ObservableObject {
+    private let songRepo: SongRepository
+    @Published var songs: [Song] = []
+    @Published var totalSongs: Int = 0
+    @Published var isLoadingPage: Bool = false
+
+    private var currentPage: Int = 0
+    private let pageSize: Int = 50
+    private var hasMorePages: Bool = true
+    private var currentQuery: String = ""
+
+    private let logger = Logger(subsystem: "com.snowbear.musicapp", category: "SongListViewModel")
+
+    init(songRepo: SongRepository) {
+        self.songRepo = songRepo
+    }
+
+    func loadInitialSongs() async {
+        currentPage = 0
+        songs = []
+        hasMorePages = true
+        currentQuery = ""
+        await loadTotalSongs()
+        await loadMoreSongs()
+    }
+
+    func searchSongs(query: String) async {
+        currentQuery = query
+        currentPage = 0
+        songs = []
+        hasMorePages = true
+        await loadTotalSongs()
+        await loadMoreSongs()
+    }
+
+    private func loadTotalSongs() async {
+        do {
+            let count = try await songRepo.totalSongCount(query: currentQuery)
+            totalSongs = count
+            logger.debug("Total songs loaded: \(count)")
+        } catch {
+            logger.error("Failed to load total song count: \(error.localizedDescription)")
+            totalSongs = 0
+        }
+    }
+
+    func loadMoreSongs() async {
+        guard !isLoadingPage && hasMorePages else { return }
+        isLoadingPage = true
+        do {
+            let newSongs = try await songRepo.searchSongsFTS(
+                query: currentQuery, limit: pageSize, offset: currentPage * pageSize)
+            if newSongs.count < pageSize { hasMorePages = false }
+            songs.append(contentsOf: newSongs)
+            currentPage += 1
+            logger.debug("Loaded page \(self.currentPage) with \(newSongs.count) songs")
+        } catch {
+            logger.error("Error loading more songs: \(error.localizedDescription)")
+        }
+        isLoadingPage = false
+    }
+
+    func loadMoreIfNeeded(currentSong song: Song) {
+        if let index = songs.firstIndex(where: { $0.id == song.id }), index >= songs.count - 5 {
+            Task { await loadMoreSongs() }
+        }
+    }
+}
+
+// MARK: - Updated SongListView with Player Integration & Persistent Search
 struct SongListView: View {
     @StateObject private var viewModel: SongListViewModel
-    @State private var text: String = ""
+    @State private var searchText: String = ""
+    @State private var isPlayerPresented: Bool = false
+    @ObservedObject private var playerVM: PlayerViewModel = PlayerViewModel.shared
 
     init(songRepo: SongRepository) {
         _viewModel = StateObject(wrappedValue: SongListViewModel(songRepo: songRepo))
@@ -102,93 +205,116 @@ struct SongListView: View {
     var body: some View {
         VStack {
             SearchBar(
-                text: $text,
-                onChange: { value in
-                    Task {
-                        await self.viewModel.searchSongs(query: self.text)
-                    }
-                }, placeholder: "Search songs...", debounceSeconds: 0.1
+                text: $searchText,
+                onChange: { newValue in
+                    Task { await viewModel.searchSongs(query: newValue) }
+                },
+                placeholder: "Search songs...",
+                debounceSeconds: 0.3
             )
-            .padding(.horizontal)
+            .padding()
 
-            List(viewModel.songs, id: \.id) { song in
-                HStack {
-                    Text("\(song.title) - \(song.artist)")
-                    Spacer()
-                    if let coverArt = song.coverArtPath {
-                        // Show a small cover image if you like
-                        Image(uiImage: viewModel.image(for: coverArt) ?? UIImage())
-                            .resizable()
-                            .frame(width: 40, height: 40)
-                            .cornerRadius(4)
+            Text("Total songs: \(viewModel.totalSongs)")
+                .font(.caption)
+                .padding(.horizontal)
+
+            List {
+                ForEach(Array(viewModel.songs.enumerated()), id: \.element.id) { index, song in
+                    SongRow(
+                        song: song,
+                        isPlaying: (song.id == playerVM.currentSong?.id && playerVM.isPlaying),
+                        onPlay: {
+                            // Populate the player queue and play the tapped song
+                            playerVM.configureQueue(songs: viewModel.songs, startIndex: index)
+                            playerVM.playSong(song)
+                        }
+                    )
+                    .onAppear {
+                        viewModel.loadMoreIfNeeded(currentSong: song)
                     }
                 }
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    // On tap => start playback
-                    viewModel.play(song: song)
+                if viewModel.isLoadingPage {
+                    HStack {
+                        Spacer()
+                        ProgressView()
+                        Spacer()
+                    }
+                }
+            }
+            .listStyle(PlainListStyle())
+
+            // Mini player at the bottom triggers full-screen player
+            MiniPlayerView {
+                isPlayerPresented = true
+            }
+        }
+        .fullScreenCover(isPresented: $isPlayerPresented) {
+            PlayerView()
+        }
+        .onAppear {
+            Task {
+                if searchText.isEmpty {
+                    await viewModel.loadInitialSongs()
+                } else {
+                    await viewModel.searchSongs(query: searchText)
                 }
             }
         }
-        .onAppear {
-            Task { await viewModel.loadAll() }
-        }
-
     }
 }
 
-@MainActor
-class SongListViewModel: ObservableObject {
-    @Published var songs: [Song] = []
-    private let songRepo: SongRepository
-    private var playerVM = PlayerViewModel.shared
+struct MiniPlayerView: View {
+    @ObservedObject var playerVM: PlayerViewModel = PlayerViewModel.shared
+    var onTap: () -> Void
 
-    init(songRepo: SongRepository) {
-        self.songRepo = songRepo
-    }
+    var body: some View {
+        if playerVM.currentSong != nil {
+            Button(action: {
+                onTap()
+            }) {
+                HStack {
+                    if let song = playerVM.currentSong, let cover = coverArt(of: song) {
+                        Image(uiImage: cover)
+                            .resizable()
+                            .frame(width: 50, height: 50)
+                            .cornerRadius(5)
+                    } else {
+                        Image(systemName: "music.note")
+                            .resizable()
+                            .frame(width: 50, height: 50)
+                            .cornerRadius(5)
+                    }
 
-    func loadAll() async {
-        do {
-            // For a quick approach, if you have a method to get all songs from DB:
-            let allSongs = try await songRepo.searchSongsFTS(query: "", limit: 9999)
-            self.songs = allSongs
-        } catch {
-            print("Song loading error: \(error)")
-        }
-    }
-
-    func searchSongs(query: String) async {
-        // Add small delay even though we have debounce
-        if query.isEmpty {
-            await loadAll()
-        } else {
-            do {
-                let found = try await songRepo.searchSongsFTS(query: query, limit: 100)
-
-                self.songs = found
-            } catch {
-                print("Search error: \(error)")
+                    VStack(alignment: .leading) {
+                        Text(playerVM.currentSong?.title ?? "No Song")
+                            .font(.headline)
+                        Text(
+                            "\(playerVM.currentSong?.artist ?? "Unknown") - \(playerVM.currentSong?.album ?? "")"
+                        )
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    Button(action: {
+                        playerVM.playPause()
+                    }) {
+                        Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.title)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .padding()
+                .background(Color(UIColor.secondarySystemBackground))
             }
+            .buttonStyle(PlainButtonStyle())
         }
-
     }
 
-    func play(song: Song) {
-        playerVM.configureQueue(
-            songs: songs, startIndex: songs.firstIndex(where: { $0.id == song.id }) ?? 0)
-        playerVM.playSong(song)
-    }
-
-    // Example local image loading for covers in Documents
-    func image(for coverArtPath: String) -> UIImage? {
+    private func coverArt(of song: Song) -> UIImage? {
+        guard let coverArtPath = song.coverArtPath else { return nil }
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let imageURL = docs.appendingPathComponent(coverArtPath)
-        if let data = try? Data(contentsOf: imageURL),
-            let image = UIImage(data: data)
-        {
-            return image
-        }
-        return nil
+        let coverURL = docs.appendingPathComponent(coverArtPath)
+        return UIImage(contentsOfFile: coverURL.path)
     }
 }
 
@@ -623,14 +749,6 @@ struct LibraryBrowseView: View {
                     .padding()
                 }
 
-                // Search bar
-                // TextField("Search...", text: $viewModel.searchTerm)
-                //     .textFieldStyle(.roundedBorder)
-                //     .padding(.horizontal)
-                //     .onSubmit {
-                //         Task { await viewModel.loadItems() }
-                //     }
-
                 SearchBar(
                     text: $viewModel.searchTerm,
                     onChange: { value in
@@ -1064,7 +1182,7 @@ struct musicappApp: App {
 
     private func setupApp() -> Swift.Result<AppDependencies, CustomError> {
         do {
-            let schemaVersion = 7
+            let schemaVersion = 8
             let db = setupSQLiteConnection(dbName: "musicapp\(schemaVersion).sqlite")
             let userRepo = try SQLiteUserRepository(db: db!)
             let userService = DefaultUserService(userRepository: userRepo)
