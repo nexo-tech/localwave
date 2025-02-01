@@ -101,19 +101,10 @@ struct SongListView: View {
 
     var body: some View {
         VStack {
-            // TextField(
-            //     "Search songs...", text: $searchTerm,
-            //     onCommit: {
-            //         Task { await viewModel.searchSongs(query: searchTerm) }
-            //     }
-            // )
-            // .textFieldStyle(.roundedBorder)
-            // .padding()
             SearchBar(
                 text: $text,
                 onChange: { value in
                     Task {
-                        print("hey \(self.text)")
                         await self.viewModel.searchSongs(query: self.text)
                     }
                 }, placeholder: "Search songs...", debounceSeconds: 0.1
@@ -168,8 +159,6 @@ class SongListViewModel: ObservableObject {
 
     func searchSongs(query: String) async {
         // Add small delay even though we have debounce
-        print("searching with \(query)")
-
         if query.isEmpty {
             await loadAll()
         } else {
@@ -956,7 +945,7 @@ class SyncViewModel: ObservableObject {
             do {
                 if let currentUser = self.createdUser {
                     let lib = try await libraryService?.registerLibraryPath(
-                        userId: currentUser.id!, path: path)
+                      userId: currentUser.id!, path: path, type: .iCloud)
                     let libId = lib?.id ?? -1
                     logger.debug("created library \(libId)")
                     self.currentLibrary = lib

@@ -27,10 +27,15 @@ struct User: Sendable {
     let icloudId: Int64
 }
 
+enum LibraryType: String, Codable, CaseIterable {
+    case iCloud
+}
+
 struct Library: Sendable {
     var id: Int64?
     var dirPath: String
     var userId: Int64
+    var type: LibraryType?
     var totalPaths: Int?
     var syncError: String?
     var isCurrent: Bool
@@ -827,7 +832,7 @@ actor DefaultLibrarySyncService: LibrarySyncService {
 }
 
 protocol LibraryService {
-    func registerLibraryPath(userId: Int64, path: String) async throws -> Library
+    func registerLibraryPath(userId: Int64, path: String, type: LibraryType) async throws -> Library
     func getCurrentLibrary(userId: Int64) async throws -> Library?
     func syncService() -> LibrarySyncService
     func importService() -> LibraryImportService
@@ -855,13 +860,14 @@ class DefaultLibraryService: LibraryService {
         }
     }
 
-    func registerLibraryPath(userId: Int64, path: String) async throws -> Library {
+    func registerLibraryPath(userId: Int64, path: String, type: LibraryType) async throws -> Library
+    {
         let library = try await libraryRepo.findOneByUserId(userId: userId, path: path)
         if library.count == 0 {
             logger.debug("no library found, creating new one")
             // Create new library
             let lib = Library(
-                id: nil, dirPath: path, userId: userId, totalPaths: nil, syncError: nil,
+                id: nil, dirPath: path, userId: userId, type: type, totalPaths: nil, syncError: nil,
                 isCurrent: true, createdAt: Date(), lastSyncedAt: nil, updatedAt: nil)
             let library = try await libraryRepo.create(library: lib)
             logger.debug("updating current switch")
@@ -1047,6 +1053,8 @@ actor SQLiteLibraryRepository: LibraryRepository {
     private let db: Connection
     private let table = Table("libraries")
 
+    // Add type column
+    private var colType: SQLite.Expression<String?>
     private var colId: SQLite.Expression<Int64>
     private var colDirPath: SQLite.Expression<String>
     private var colUserId: SQLite.Expression<Int64>
@@ -1059,32 +1067,36 @@ actor SQLiteLibraryRepository: LibraryRepository {
 
     private let logger = Logger(subsystem: subsystem, category: "SQLiteLibraryRepository")
 
-    // MARK: - Initializer
     init(db: Connection) throws {
-        let colId: SQLite.Expression<Int64> = Expression<Int64>("id")
-        let colDirPath: SQLite.Expression<String> = Expression<String>("dirPath")
-        let colUserId: SQLite.Expression<Int64> = Expression<Int64>("userId")
-        let colTotalPaths: SQLite.Expression<Int?> = Expression<Int?>("totalPaths")
-        let colSyncError: SQLite.Expression<String?> = Expression<String?>("syncError")
-        let colIsCurrent: SQLite.Expression<Bool> = Expression<Bool>("isCurrent")
-        let colCreatedAt: SQLite.Expression<Date> = Expression<Date>("createdAt")
-        let colLastSyncedAt: SQLite.Expression<Date?> = Expression<Date?>("lastSyncedAt")
-        let colUpdatedAt: SQLite.Expression<Date?> = Expression<Date?>("updatedAt")
+        // Existing columns
+        let colId = SQLite.Expression<Int64>("id")
+        let colDirPath = SQLite.Expression<String>("dirPath")
+        let colUserId = SQLite.Expression<Int64>("userId")
+        let colTotalPaths = SQLite.Expression<Int?>("totalPaths")
+        let colSyncError = SQLite.Expression<String?>("syncError")
+        let colIsCurrent = SQLite.Expression<Bool>("isCurrent")
+        let colCreatedAt = SQLite.Expression<Date>("createdAt")
+        let colLastSyncedAt = SQLite.Expression<Date?>("lastSyncedAt")
+        let colUpdatedAt = SQLite.Expression<Date?>("updatedAt")
+        let colType = SQLite.Expression<String?>("type")
+
         self.db = db
+
+        // Create table with new column
         try db.run(
             table.create(ifNotExists: true) { t in
                 t.column(colId, primaryKey: .autoincrement)
                 t.column(colDirPath)
                 t.column(colUserId)
+                t.column(colType)
                 t.column(colTotalPaths)
                 t.column(colSyncError)
                 t.column(colIsCurrent)
                 t.column(colCreatedAt)
                 t.column(colLastSyncedAt)
                 t.column(colUpdatedAt)
-            }
-        )
-        logger.debug("Created table: libraries")
+            })
+
         self.colId = colId
         self.colDirPath = colDirPath
         self.colUserId = colUserId
@@ -1094,6 +1106,15 @@ actor SQLiteLibraryRepository: LibraryRepository {
         self.colCreatedAt = colCreatedAt
         self.colLastSyncedAt = colLastSyncedAt
         self.colUpdatedAt = colUpdatedAt
+        self.colType = colType
+
+        // Add column migration for existing installations
+        do {
+            try db.run(table.addColumn(colType))
+            logger.debug("Added type column to libraries table")
+        } catch {
+            logger.debug("Type column already exists: \(error.localizedDescription)")
+        }
     }
 
     func getOne(id: Int64) async throws -> Library? {
@@ -1103,6 +1124,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
                 id: row[colId],
                 dirPath: row[colDirPath],
                 userId: row[colUserId],
+                type: row[colType].flatMap(LibraryType.init(rawValue:)),  // Map from String?
                 totalPaths: row[colTotalPaths],
                 syncError: row[colSyncError],
                 isCurrent: row[colIsCurrent],
@@ -1114,11 +1136,12 @@ actor SQLiteLibraryRepository: LibraryRepository {
         return nil
     }
 
-    // MARK: - Create
     func create(library: Library) async throws -> Library {
+        // Force explicit type setting (even if nil)
         let insert = table.insert(
             colDirPath <- library.dirPath,
             colUserId <- library.userId,
+            colType <- library.type?.rawValue,  // Explicit null if type is nil
             colTotalPaths <- library.totalPaths,
             colSyncError <- library.syncError,
             colIsCurrent <- library.isCurrent,
@@ -1126,12 +1149,15 @@ actor SQLiteLibraryRepository: LibraryRepository {
             colLastSyncedAt <- library.lastSyncedAt,
             colUpdatedAt <- library.updatedAt
         )
+
         let rowId = try db.run(insert)
         logger.debug("Inserted library with ID: \(rowId)")
+
         return Library(
             id: rowId,
             dirPath: library.dirPath,
             userId: library.userId,
+            type: library.type,  // Preserve original type
             totalPaths: library.totalPaths,
             syncError: library.syncError,
             isCurrent: library.isCurrent,
@@ -1141,18 +1167,18 @@ actor SQLiteLibraryRepository: LibraryRepository {
         )
     }
 
-    // MARK: - Find by User ID
     func findOneByUserId(userId: Int64, path: String?) async throws -> [Library] {
         var predicate = colUserId == userId
-        if path != nil {
-            predicate = predicate && colDirPath == path!
+        if let path = path {
+            predicate = predicate && colDirPath == path
         }
-        return try db.prepare(table.filter(predicate)).map {
-            row in
+
+        return try db.prepare(table.filter(predicate)).map { row in
             Library(
                 id: row[colId],
                 dirPath: row[colDirPath],
                 userId: row[colUserId],
+                type: row[colType].flatMap(LibraryType.init(rawValue:)),
                 totalPaths: row[colTotalPaths],
                 syncError: row[colSyncError],
                 isCurrent: row[colIsCurrent],
@@ -1163,52 +1189,48 @@ actor SQLiteLibraryRepository: LibraryRepository {
         }
     }
 
-    // MARK: - Update
     func updateLibrary(library: Library) async throws -> Library {
         guard let libraryId = library.id else {
             throw NSError(domain: "Invalid library ID", code: 0, userInfo: nil)
         }
+
         let query = table.filter(colId == libraryId)
         try db.run(
             query.update(
                 colDirPath <- library.dirPath,
+                colType <- library.type?.rawValue,
                 colTotalPaths <- library.totalPaths,
                 colSyncError <- library.syncError,
                 colIsCurrent <- library.isCurrent,
                 colLastSyncedAt <- library.lastSyncedAt,
                 colUpdatedAt <- library.updatedAt
             ))
-        logger.debug("Updated library with ID: \(libraryId)")
+
         return library
     }
 
-    // MARK: - Set Current Library
     func setCurrentLibrary(userId: Int64, libraryId: Int64) async throws -> Library {
         try db.transaction {
-            // Set all libraries for the user to `isCurrent = false`
             try db.run(table.filter(colUserId == userId).update(colIsCurrent <- false))
-
-            // Set the specific library to `isCurrent = true`
-            let query = table.filter(colId == libraryId)
-            try db.run(query.update(colIsCurrent <- true))
+            try db.run(table.filter(colId == libraryId).update(colIsCurrent <- true))
         }
 
-        // Return the updated current library
-        if let row = try db.pluck(table.filter(colId == libraryId)) {
-            return Library(
-                id: row[colId],
-                dirPath: row[colDirPath],
-                userId: row[colUserId],
-                totalPaths: row[colTotalPaths],
-                syncError: row[colSyncError],
-                isCurrent: row[colIsCurrent],
-                createdAt: row[colCreatedAt],
-                lastSyncedAt: row[colLastSyncedAt],
-                updatedAt: row[colUpdatedAt]
-            )
-        } else {
+        guard let row = try db.pluck(table.filter(colId == libraryId)) else {
             throw NSError(domain: "Library not found", code: 0, userInfo: nil)
         }
+
+        return Library(
+            id: row[colId],
+            dirPath: row[colDirPath],
+            userId: row[colUserId],
+            type: row[colType].flatMap(LibraryType.init(rawValue:)),
+            totalPaths: row[colTotalPaths],
+            syncError: row[colSyncError],
+            isCurrent: row[colIsCurrent],
+            createdAt: row[colCreatedAt],
+            lastSyncedAt: row[colLastSyncedAt],
+            updatedAt: row[colUpdatedAt]
+        )
     }
 }
 
