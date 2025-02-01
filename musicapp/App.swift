@@ -228,9 +228,31 @@ protocol SongImportService {
         paths: [LibraryPath],
         onProgress: ((Double, URL) async -> Void)?
     ) async throws
+
+    func cancelImport() async
+}
+
+private enum ImageFormat {
+    case png
+    case jpeg
+
+    var fileExtension: String {
+        switch self {
+        case .png: return "png"
+        case .jpeg: return "jpg"
+        }
+    }
 }
 
 actor DefaultSongImportService: SongImportService {
+    private var currentImportTask: Task<Void, Error>?
+    private var isImporting = false
+
+    func cancelImport() {
+        currentImportTask?.cancel()
+        releaseSecurityAccess()
+    }
+
     private let logger = Logger(subsystem: subsystem, category: "SongImporter")
     private let songRepo: SongRepository
     private let libraryPathRepo: LibraryPathRepository
@@ -305,10 +327,33 @@ actor DefaultSongImportService: SongImportService {
         activeRootURLs.forEach { $1.stopAccessingSecurityScopedResource() }
         activeRootURLs.removeAll()
     }
+    func importPaths(
+        paths: [LibraryPath],
+        onProgress: ((Double, URL) async -> Void)? = nil
+    ) async throws {
+        // Cancel any existing task
+        if let currentTask = currentImportTask {
+            currentTask.cancel()
+            try await currentTask.value
+        }
+
+        currentImportTask = Task {
+            defer {
+                currentImportTask = nil
+                isImporting = false
+                releaseSecurityAccess()
+            }
+
+            isImporting = true
+            try await importImplementation(paths: paths, onProgress: onProgress)
+        }
+
+        try await currentImportTask!.value
+    }
 
     /// Import all paths, recursively grabbing files from directories.
     /// - parameter onProgress: Called with (percentage from 0..100, currentFileURL).
-    func importPaths(
+    func importImplementation(
         paths: [LibraryPath],
         onProgress: ((Double, URL) async -> Void)? = nil
     ) async throws {
@@ -394,7 +439,6 @@ actor DefaultSongImportService: SongImportService {
 
     private func resolveURLFromLibrary(_ library: Library, relativePath: String) throws -> URL? {
         let folderAbsoluteString = library.dirPath
-        let folderURL = URL(string: folderAbsoluteString)!
         let bookmarkKey = String(hashStringToInt64(folderAbsoluteString))
 
         guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
@@ -459,19 +503,40 @@ actor DefaultSongImportService: SongImportService {
         }
     }
 
-    // MARK: - Extract cover art data
-    /// This checks for typical iTunes/ID3 "artwork" items and returns the first found.
+    // MARK: - Extract cover art data (improved)
     @available(iOS 16.0, *)
     private func extractCoverArtData(url: URL) async -> Data? {
         let asset = AVURLAsset(url: url)
         do {
             let metadata = try await asset.load(.metadata)
-            // Sometimes "artwork" can be found in ID3 metadata or iTunes metadata.
+
+            // Check multiple possible metadata keys
             for item in metadata {
-                if let keySpace = item.keySpace, keySpace == .id3 || keySpace == .iTunes {
-                    if let dataValue = try? await item.load(.dataValue) {
+                guard item.commonKey != nil else { continue }
+
+                // Handle both data values and external URLs
+                if let dataValue = try? await item.load(.dataValue) {
+                    if isValidImageData(dataValue) {
                         return dataValue
                     }
+                }
+
+                // Handle URL references
+                if let stringValue = try? await item.load(.stringValue),
+                    let url = URL(string: stringValue),
+                    url.scheme == "http" || url.scheme == "https"
+                {
+                    logger.debug("Found remote artwork URL: \(url.absoluteString)")
+                    // Consider downloading here if appropriate
+                }
+            }
+
+            // Fallback: Check all metadata items regardless of key space
+            for item in metadata {
+                if let dataValue = try? await item.load(.dataValue),
+                    isValidImageData(dataValue)
+                {
+                    return dataValue
                 }
             }
         } catch {
@@ -480,12 +545,25 @@ actor DefaultSongImportService: SongImportService {
         return nil
     }
 
-    // MARK: - Store cover art on disk, but deduplicate by hash
+    // MARK: - Validate image data
+    private func isValidImageData(_ data: Data) -> Bool {
+        return UIImage(data: data) != nil
+    }
+
+    // MARK: - Store cover art with format detection
     private func storeCoverArtOnDiskDedup(_ data: Data?) throws -> String? {
         guard let data = data, !data.isEmpty else { return nil }
 
+        // Validate image data
+        guard isValidImageData(data), let image = UIImage(data: data) else {
+            logger.error("Invalid image data, skipping cover art")
+            return nil
+        }
+
+        // Detect image format
+        let format: ImageFormat = image.pngData() != nil ? .png : .jpeg
         let hashString = sha256(data).map { String(format: "%02x", $0) }.joined()
-        let filename = "cover-\(hashString).jpg"
+        let filename = "cover-\(hashString).\(format.fileExtension)"
 
         guard
             let documentsDir = FileManager.default.urls(
@@ -494,18 +572,24 @@ actor DefaultSongImportService: SongImportService {
         else {
             return nil
         }
+
         let coverArtDir = documentsDir.appendingPathComponent("CoverArt", isDirectory: true)
         if !FileManager.default.fileExists(atPath: coverArtDir.path) {
             try FileManager.default.createDirectory(
                 at: coverArtDir, withIntermediateDirectories: true)
         }
+
         let fileURL = coverArtDir.appendingPathComponent(filename)
 
-        // If file doesn't already exist, write it
         if !FileManager.default.fileExists(atPath: fileURL.path) {
-            try data.write(to: fileURL)
+            switch format {
+            case .png:
+                try image.pngData()?.write(to: fileURL)
+            case .jpeg:
+                try image.jpegData(compressionQuality: 0.8)?.write(to: fileURL)
+            }
         }
-        // Return relative path
+
         return "CoverArt/\(filename)"
     }
 

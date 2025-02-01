@@ -1,6 +1,57 @@
 import AVFoundation
+import Combine
 import SwiftUI
 import os
+
+struct SearchBar: View {
+    @Binding var text: String
+
+    @State private var isEditing = false
+    @State private var textSubject = PassthroughSubject<String, Never>()
+
+    var onChange: ((String) -> Void)
+    let placeholder: String
+    let debounceSeconds: Double
+
+    var body: some View {
+        HStack {
+            TextField(placeholder, text: $text)
+                .padding(8)
+                .padding(.horizontal, 25)
+                .background(Color(.systemGray6))
+                .cornerRadius(8)
+                .overlay(
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundColor(.gray)
+                            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, 8)
+                        if !text.isEmpty {
+                            Button(action: {
+                                self.text = ""
+                            }) {
+                                Image(systemName: "multiply.circle.fill")
+                                    .foregroundColor(.gray)
+                                    .padding(.trailing, 8)
+                            }
+                        }
+                    }
+                )
+                .onTapGesture {
+                    self.isEditing = true
+                }
+                .onChange(of: text) {
+                    print("Text changed: \(text)")
+                    textSubject.send(text)
+                }
+        }
+        .onReceive(textSubject.debounce(for: .seconds(debounceSeconds), scheduler: RunLoop.main)) {
+            debouncedValue in
+            print("Debounced change called: \(debouncedValue)")
+            onChange(debouncedValue)
+        }
+    }
+}
 
 struct MainTabView: View {
     private let app: AppDependencies?
@@ -42,7 +93,7 @@ struct MainTabView: View {
 
 struct SongListView: View {
     @StateObject private var viewModel: SongListViewModel
-    @State private var searchTerm: String = ""
+    @State private var text: String = ""
 
     init(songRepo: SongRepository) {
         _viewModel = StateObject(wrappedValue: SongListViewModel(songRepo: songRepo))
@@ -50,14 +101,24 @@ struct SongListView: View {
 
     var body: some View {
         VStack {
-            TextField(
-                "Search songs...", text: $searchTerm,
-                onCommit: {
-                    Task { await viewModel.searchSongs(query: searchTerm) }
-                }
+            // TextField(
+            //     "Search songs...", text: $searchTerm,
+            //     onCommit: {
+            //         Task { await viewModel.searchSongs(query: searchTerm) }
+            //     }
+            // )
+            // .textFieldStyle(.roundedBorder)
+            // .padding()
+            SearchBar(
+                text: $text,
+                onChange: { value in
+                    Task {
+                        print("hey \(self.text)")
+                        await self.viewModel.searchSongs(query: self.text)
+                    }
+                }, placeholder: "Search songs...", debounceSeconds: 0.1
             )
-            .textFieldStyle(.roundedBorder)
-            .padding()
+            .padding(.horizontal)
 
             List(viewModel.songs, id: \.id) { song in
                 HStack {
@@ -81,6 +142,7 @@ struct SongListView: View {
         .onAppear {
             Task { await viewModel.loadAll() }
         }
+
     }
 }
 
@@ -105,17 +167,27 @@ class SongListViewModel: ObservableObject {
     }
 
     func searchSongs(query: String) async {
-        do {
-            let found = try await songRepo.searchSongsFTS(query: query, limit: 100)
-            self.songs = found
-        } catch {
-            print("Search error: \(error)")
+        // Add small delay even though we have debounce
+        print("searching with \(query)")
+
+        if query.isEmpty {
+            await loadAll()
+        } else {
+            do {
+                let found = try await songRepo.searchSongsFTS(query: query, limit: 100)
+
+                self.songs = found
+            } catch {
+                print("Search error: \(error)")
+            }
         }
+
     }
 
     func play(song: Song) {
-      playerVM.configureQueue(songs: songs, startIndex: songs.firstIndex(where: { $0.id == song.id }) ?? 0)
-          playerVM.playSong(song)
+        playerVM.configureQueue(
+            songs: songs, startIndex: songs.firstIndex(where: { $0.id == song.id }) ?? 0)
+        playerVM.playSong(song)
     }
 
     // Example local image loading for covers in Documents
@@ -135,7 +207,7 @@ class SongListViewModel: ObservableObject {
 class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayerDelegate {
     static let shared = PlayerViewModel()
     private override init() {
-      super.init()
+        super.init()
     }  // NSObject requires this
 
     @Published var currentSong: Song?
@@ -148,9 +220,9 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     private var timer: Timer?
     private var songs: [Song] = []
     private var currentIndex: Int = 0
-  func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
-      nextSong()
-  }
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        nextSong()
+    }
     func configureQueue(songs: [Song], startIndex: Int) {
         self.songs = songs
         self.currentIndex = startIndex
@@ -220,20 +292,19 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         updateTimeDisplay()
     }
 
+    private func startTimer() {
+        timer = Timer.scheduledTimer(
+            withTimeInterval: 0.1,
+            repeats: true
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateTimeDisplay()
+            }
+        }
 
-  private func startTimer() {
-      timer = Timer.scheduledTimer(
-          withTimeInterval: 0.1,
-          repeats: true
-      ) { [weak self] _ in
-          Task { @MainActor [weak self] in
-              self?.updateTimeDisplay()
-          }
-      }
-      
-      // Ensure timer runs on main run loop
-      RunLoop.main.add(timer!, forMode: .common)
-  }
+        // Ensure timer runs on main run loop
+        RunLoop.main.add(timer!, forMode: .common)
+    }
 
     private func stopTimer() {
         timer?.invalidate()
@@ -271,7 +342,6 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     }
 }
 
-
 struct PlayerView: View {
     @StateObject private var vm = PlayerViewModel.shared
 
@@ -308,14 +378,24 @@ struct PlayerView: View {
             }
         }
     }
-
+    @State private var editingProgress: Double?
     private func progressView() -> some View {
         VStack {
-            Slider(value: $vm.playbackProgress, in: 0...1) { editing in
-                if !editing {
-                    vm.seek(to: vm.playbackProgress)
+            Slider(
+                value: Binding(
+                    get: { editingProgress ?? vm.playbackProgress },
+                    set: { newValue in
+                        editingProgress = newValue
+                    }
+                ),
+                in: 0...1,
+                onEditingChanged: { editing in
+                    if !editing, let progress = editingProgress {
+                        vm.seek(to: progress)
+                    }
+                    editingProgress = nil  // Clear temporary value
                 }
-            }
+            )
             .accentColor(.purple)
 
             HStack {
@@ -388,7 +468,7 @@ struct LibraryView: View {
 class LibraryBrowseViewModel: ObservableObject {
     private let service: LibraryImportService
     private let libraryId: Int64
-
+    @Published var isImporting = false
     /// A stack of visited parentPathIds; the last element is the "current folder."
     @Published private var pathStack: [Int64?] = [nil]
 
@@ -455,11 +535,9 @@ class LibraryBrowseViewModel: ObservableObject {
 }
 struct LibraryBrowseView: View {
     @StateObject var viewModel: LibraryBrowseViewModel
-    // NEW:
     @State private var showImportProgress = false
     @State private var importProgress: Double = 0
     @State private var currentFileName: String = ""
-    @State private var isImporting = false
 
     // Add a reference to your SongImportService somehow
     // For example, you can pass it in or get it from AppDependencies
@@ -494,16 +572,25 @@ struct LibraryBrowseView: View {
                     }
                     Spacer()
                     if viewModel.selectedPathIds.count > 0 {
-                        Button("Import \(viewModel.selectedPathIds.count) items") {
+                        Button(
+                            viewModel.isImporting
+                                ? "Importing..." : "Import \(viewModel.selectedPathIds.count) items"
+                        ) {
+                            guard !viewModel.isImporting else { return }
+
                             Task {
-                                isImporting = true
+                                viewModel.isImporting = true
                                 showImportProgress = true
+                                defer {
+                                    viewModel.isImporting = false
+                                    showImportProgress = false
+                                }
+
                                 do {
-                                    // Filter out selected library paths
                                     let selectedPaths = viewModel.items.filter {
                                         viewModel.selectedPathIds.contains($0.pathId)
                                     }
-                                    // Call your import service
+
                                     try await songImportService.importPaths(
                                         paths: selectedPaths,
                                         onProgress: { pct, fileURL in
@@ -513,33 +600,55 @@ struct LibraryBrowseView: View {
                                             }
                                         }
                                     )
+
+                                    // Clear selection only if completed successfully
+                                    viewModel.selectedPathIds = []
                                 } catch {
                                     print("Import error: \(error)")
+                                    // Don't clear selection if cancelled
+                                    if !(error is CancellationError) {
+                                        viewModel.selectedPathIds = []
+                                    }
                                 }
-                                isImporting = false
                             }
                         }
+                        .disabled(viewModel.selectedPathIds.isEmpty || viewModel.isImporting)
                     }
                 }
-                // Optional progress bar or text
                 if showImportProgress {
                     VStack {
-                        Text("Importing \(currentFileName) ...")
-                        ProgressView(value: importProgress, total: 100)
+                        if viewModel.isImporting {
+                            Text("Importing \(currentFileName) ...")
+                            ProgressView(value: importProgress, total: 100)
+                            Button("Cancel Import") {
+                                Task {
+                                    await songImportService.cancelImport()
+                                    showImportProgress = false
+                                }
+                            }
+                            .padding()
+                        } else {
+                            Text(importProgress >= 100 ? "Complete!" : "Cancelled")
+                        }
                     }
                     .padding()
-                    .onChange(of: isImporting) { newVal in
-                        if newVal == false { showImportProgress = false }
-                    }
                 }
-                // Search bar
-                TextField("Search...", text: $viewModel.searchTerm)
-                    .textFieldStyle(.roundedBorder)
-                    .padding(.horizontal)
-                    .onSubmit {
-                        Task { await viewModel.loadItems() }
-                    }
 
+                // Search bar
+                // TextField("Search...", text: $viewModel.searchTerm)
+                //     .textFieldStyle(.roundedBorder)
+                //     .padding(.horizontal)
+                //     .onSubmit {
+                //         Task { await viewModel.loadItems() }
+                //     }
+
+                SearchBar(
+                    text: $viewModel.searchTerm,
+                    onChange: { value in
+                        Task { await viewModel.loadItems() }
+                    }, placeholder: "Search paths...", debounceSeconds: 0.1
+                )
+                .padding(.horizontal)
                 // File/Folder list
                 List(viewModel.items, id: \.pathId) { item in
                     HStack {
