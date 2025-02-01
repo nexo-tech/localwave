@@ -945,7 +945,7 @@ class SyncViewModel: ObservableObject {
             do {
                 if let currentUser = self.createdUser {
                     let lib = try await libraryService?.registerLibraryPath(
-                      userId: currentUser.id!, path: path, type: .iCloud)
+                        userId: currentUser.id!, path: path, type: .iCloud)
                     let libId = lib?.id ?? -1
                     logger.debug("created library \(libId)")
                     self.currentLibrary = lib
@@ -1042,5 +1042,64 @@ class SyncViewModel: ObservableObject {
                 self.errorMessage = error.localizedDescription
             }
         }
+    }
+}
+
+@main
+struct musicappApp: App {
+    var body: some Scene {
+        let app = setupApp()
+        WindowGroup {
+            switch app {
+            case .success(let app):
+                MainTabView(app: app)
+            case .failure(let err):
+                Text("Failed to initialize the app: \(err.localizedDescription)")
+                    .foregroundColor(.red)
+                    .padding()
+            }
+
+        }
+    }
+
+    private func setupApp() -> Swift.Result<AppDependencies, CustomError> {
+        do {
+            let schemaVersion = 7
+            let db = setupSQLiteConnection(dbName: "musicapp\(schemaVersion).sqlite")
+            let userRepo = try SQLiteUserRepository(db: db!)
+            let userService = DefaultUserService(userRepository: userRepo)
+            let icloudProvider = DefaultICloudProvider()
+            let userCloudService = DefaultUserCloudService(
+                userService: userService, iCloudProvider: icloudProvider)
+            let libraryRepo = try SQLiteLibraryRepository(db: db!)
+            let libraryPathRepository = try SQLiteLibraryPathRepository(db: db!)
+            let libraryPathSearchRepository = try SQLiteLibraryPathSearchRepository(db: db!)
+            let librarySyncService = DefaultLibrarySyncService(
+                libraryRepository: libraryRepo,
+                libraryPathSearchRepository: libraryPathSearchRepository,
+                libraryPathRepository: libraryPathRepository)
+            let songRepository = try SQLiteSongRepository(db: db!)
+            let songImportService = DefaultSongImportService(
+                songRepo: songRepository,
+                libraryPathRepo: libraryPathRepository, libraryRepo: libraryRepo)
+            let libraryImportService = DefaultLibraryImportService(
+                libraryPathRepository: libraryPathRepository,
+                libraryPathSearchRepository: libraryPathSearchRepository)
+            let libraryService = DefaultLibraryService(
+                libraryRepo: libraryRepo, librarySyncService: librarySyncService,
+                libraryImportService: libraryImportService)
+            let app = AppDependencies(
+                userService: userService,
+                userCloudService: userCloudService,
+                icloudProvider: icloudProvider,
+                libraryService: libraryService,
+                songRepository: songRepository,
+                songImportService: songImportService)
+
+            return .success(app)
+        } catch {
+            return .failure(.genericError(error.localizedDescription))
+        }
+
     }
 }

@@ -1,15 +1,6 @@
 {
-  "originHash" : "87286bb69b4ded9fbc1067f5ba3b0792ebfd9ef631a561aa457eac8eba044c3a",
+  "originHash" : "42598adf0e546dd7490b40b2fd0f5298dee9c098f71dcdbfcb5cc4c07573f374",
   "pins" : [
-    {
-      "identity" : "fileprovider",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/amosavian/FileProvider.git",
-      "state" : {
-        "revision" : "5d31778376af168ac917e0b1e8d2c4ee64cb246c",
-        "version" : "0.26.0"
-      }
-    },
     {
       "identity" : "sqlite.swift",
       "kind" : "remoteSourceControl",
