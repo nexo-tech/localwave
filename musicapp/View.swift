@@ -59,19 +59,12 @@ struct MainTabView: View {
     }
     var body: some View {
         TabView {
-            LibraryView().tabItem {
-                Label("Library", systemImage: "books.vertical")
-            }
-
-            // 2) A SongListView with search + tapping => play
             if let songRepo = app?.songRepository {
-                SongListView(songRepo: songRepo)
-                    .tabItem {
-                        Label("All Songs", systemImage: "music.note.list")
-                    }
+                LibraryView(songRepo: songRepo).tabItem {
+                    Label("Library", systemImage: "books.vertical")
+                }
             }
 
-            // 3) Simple player
             PlayerView()
                 .tabItem {
                     Label("Player", systemImage: "play.circle")
@@ -122,6 +115,13 @@ struct SongRow: View {
 // MARK: - Updated SongListViewModel
 @MainActor
 class SongListViewModel: ObservableObject {
+    enum Filter {
+        case all
+        case artist(String)
+        case album(String, artist: String?)
+    }
+
+    private let filter: Filter
     private let songRepo: SongRepository
     @Published var songs: [Song] = []
     @Published var totalSongs: Int = 0
@@ -134,26 +134,47 @@ class SongListViewModel: ObservableObject {
 
     private let logger = Logger(subsystem: "com.snowbear.musicapp", category: "SongListViewModel")
 
-    init(songRepo: SongRepository) {
+    init(songRepo: SongRepository, filter: Filter) {
         self.songRepo = songRepo
+        self.filter = filter
     }
 
-    func loadInitialSongs() async {
-        currentPage = 0
-        songs = []
-        hasMorePages = true
-        currentQuery = ""
-        await loadTotalSongs()
-        await loadMoreSongs()
-    }
+    private func loadFilteredSongs() async throws -> [Song] {
+        switch filter {
+        case .all:
+            return try await songRepo.searchSongsFTS(
+                query: currentQuery,
+                limit: pageSize,
+                offset: currentPage * pageSize
+            )
 
-    func searchSongs(query: String) async {
-        currentQuery = query
-        currentPage = 0
-        songs = []
-        hasMorePages = true
-        await loadTotalSongs()
-        await loadMoreSongs()
+        case .artist(let artist):
+            // Combine search query with artist filter for FTS
+            let artistFilter = "artist:\"\(artist)\""
+            let combinedQuery =
+                currentQuery.isEmpty ? artistFilter : "\(currentQuery) \(artistFilter)"
+
+            return try await songRepo.searchSongsFTS(
+                query: combinedQuery,
+                limit: pageSize,
+                offset: currentPage * pageSize
+            )
+
+        case .album(let album, let artist):
+            // Combine search query with album/artist filters for FTS
+            var albumFilter = "album:\"\(album)\""
+            if let artist = artist {
+                albumFilter += " artist:\"\(artist)\""
+            }
+            let combinedQuery =
+                currentQuery.isEmpty ? albumFilter : "\(currentQuery) \(albumFilter)"
+
+            return try await songRepo.searchSongsFTS(
+                query: combinedQuery,
+                limit: pageSize,
+                offset: currentPage * pageSize
+            )
+        }
     }
 
     private func loadTotalSongs() async {
@@ -167,12 +188,18 @@ class SongListViewModel: ObservableObject {
         }
     }
 
+    func loadMoreIfNeeded(currentSong song: Song) {
+        if let index = songs.firstIndex(where: { $0.id == song.id }), index >= songs.count - 5 {
+            Task { await loadMoreSongs() }
+        }
+    }
+
+    // NEW: Modified loadMoreSongs to use loadFilteredSongs
     func loadMoreSongs() async {
         guard !isLoadingPage && hasMorePages else { return }
         isLoadingPage = true
         do {
-            let newSongs = try await songRepo.searchSongsFTS(
-                query: currentQuery, limit: pageSize, offset: currentPage * pageSize)
+            let newSongs = try await loadFilteredSongs()  // CHANGED THIS LINE
             if newSongs.count < pageSize { hasMorePages = false }
             songs.append(contentsOf: newSongs)
             currentPage += 1
@@ -183,22 +210,59 @@ class SongListViewModel: ObservableObject {
         isLoadingPage = false
     }
 
-    func loadMoreIfNeeded(currentSong song: Song) {
-        if let index = songs.firstIndex(where: { $0.id == song.id }), index >= songs.count - 5 {
-            Task { await loadMoreSongs() }
+    // NEW: Modified searchSongs to use loadFilteredSongs
+    func searchSongs(query: String) async {
+        currentQuery = query
+        currentPage = 0
+        songs = []
+        hasMorePages = true
+        await loadTotalSongs()
+
+        // CHANGED THIS SECTION
+        do {
+            let newSongs = try await loadFilteredSongs()
+            songs = newSongs
+            if newSongs.count < pageSize {
+                hasMorePages = false
+            } else {
+                currentPage = 1
+            }
+        } catch {
+            logger.error("Search error: \(error.localizedDescription)")
+        }
+    }
+
+    // NEW: Updated loadInitialSongs
+    func loadInitialSongs() async {
+        currentPage = 0
+        songs = []
+        hasMorePages = true
+        currentQuery = ""
+
+        // CHANGED THIS SECTION
+        do {
+            let initialSongs = try await loadFilteredSongs()
+            songs = initialSongs
+            if initialSongs.count == pageSize {
+                hasMorePages = true
+                currentPage = 1
+            }
+            await loadTotalSongs()
+        } catch {
+            logger.error("Initial load error: \(error.localizedDescription)")
         }
     }
 }
 
 // MARK: - Updated SongListView with Player Integration & Persistent Search
 struct SongListView: View {
-    @StateObject private var viewModel: SongListViewModel
+    @ObservedObject private var viewModel: SongListViewModel
     @State private var searchText: String = ""
     @State private var isPlayerPresented: Bool = false
     @ObservedObject private var playerVM: PlayerViewModel = PlayerViewModel.shared
 
-    init(songRepo: SongRepository) {
-        _viewModel = StateObject(wrappedValue: SongListViewModel(songRepo: songRepo))
+    init(viewModel: SongListViewModel) {
+        self.viewModel = viewModel
     }
 
     var body: some View {
@@ -677,12 +741,258 @@ extension Collection {
         return indices.contains(index) ? self[index] : nil
     }
 }
+@MainActor
+class ArtistListViewModel: ObservableObject {
+    @Published var artists: [String] = []
+    @Published var searchQuery = ""
+    private let songRepo: SongRepository
+
+    init(songRepo: SongRepository) {
+        self.songRepo = songRepo
+    }
+
+    func loadArtists() async throws {
+        artists = try await songRepo.getAllArtists()
+    }
+
+    var filteredArtists: [String] {
+        guard !searchQuery.isEmpty else { return artists }
+        return artists.filter { $0.localizedCaseInsensitiveContains(searchQuery) }
+    }
+}
+
+struct ArtistListView: View {
+    @ObservedObject var viewModel: ArtistListViewModel
+    private let songRepo: SongRepository
+
+    init(songRepo: SongRepository, viewModel: ArtistListViewModel) {
+        self.songRepo = songRepo
+        self.viewModel = viewModel
+    }
+
+    var body: some View {
+        VStack {
+            SearchBar(
+                text: $viewModel.searchQuery,
+                onChange: { _ in },
+                placeholder: "Search artists...",
+                debounceSeconds: 0.3)
+
+            List(viewModel.filteredArtists, id: \.self) { artist in
+                NavigationLink {
+                    ArtistSongListView(artist: artist, songRepo: songRepo)
+                } label: {
+                    Text(artist)
+                        .font(.headline)
+                        .padding(.vertical, 8)
+                }
+            }
+            .listStyle(.plain)
+        }
+    }
+}
+
+struct ArtistSongListView: View {
+    let artist: String
+    @StateObject private var viewModel: SongListViewModel
+    private var songRepo: SongRepository
+
+    init(artist: String, songRepo: SongRepository) {
+        self.artist = artist
+        self.songRepo = songRepo
+        _viewModel = StateObject(
+            wrappedValue: SongListViewModel(
+                songRepo: songRepo,
+                filter: .artist(artist))
+        )
+    }
+
+    var body: some View {
+        SongListView(viewModel: viewModel)
+            .navigationTitle(artist)
+            .onAppear {
+                Task { await viewModel.loadInitialSongs() }
+            }
+    }
+}
+@MainActor
+class AlbumListViewModel: ObservableObject {
+    @Published var albums: [Album] = []
+    @Published var searchQuery = ""
+    private let songRepo: SongRepository
+
+    init(songRepo: SongRepository) {
+        self.songRepo = songRepo
+    }
+
+    func loadAlbums() async throws {
+        albums = try await songRepo.getAllAlbums()
+    }
+
+    var filteredAlbums: [Album] {
+        guard !searchQuery.isEmpty else { return albums }
+        return albums.filter {
+            $0.name.localizedCaseInsensitiveContains(searchQuery)
+                || $0.artist?.localizedCaseInsensitiveContains(searchQuery) ?? false
+        }
+    }
+}
+
+struct AlbumGridView: View {
+    @ObservedObject var viewModel: AlbumListViewModel
+    private let columns = [GridItem(.adaptive(minimum: 160))]
+    private let songRepo: SongRepository
+
+    init(songRepo: SongRepository, viewModel: AlbumListViewModel) {
+        self.songRepo = songRepo
+        self.viewModel = viewModel
+    }
+    var body: some View {
+        ScrollView {
+            SearchBar(
+                text: $viewModel.searchQuery,
+                onChange: { _ in },
+                placeholder: "Search albums...",
+                debounceSeconds: 0.3)
+
+            LazyVGrid(columns: columns, spacing: 20) {
+                ForEach(viewModel.filteredAlbums) { album in
+                    NavigationLink {
+                        AlbumSongListView(album: album, songRepo: songRepo)
+                    } label: {
+                        AlbumCell(album: album)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .padding()
+        }
+    }
+}
+
+struct AlbumCell: View {
+    let album: Album
+    @State private var artwork: UIImage?
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            ZStack {
+                if let artwork = artwork {
+                    Image(uiImage: artwork)
+                        .resizable()
+                        .aspectRatio(1, contentMode: .fill)
+                } else {
+                    Image(systemName: "music.note")
+                        .resizable()
+                        .aspectRatio(1, contentMode: .fit)
+                        .padding()
+                        .background(Color.gray.opacity(0.3))
+                }
+            }
+            .frame(width: 160, height: 160)
+            .cornerRadius(8)
+            .clipped()
+
+            VStack(alignment: .leading) {
+                Text(album.name)
+                    .font(.subheadline)
+                    .lineLimit(1)
+                Text(album.artist ?? "Unknown Artist")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(width: 160)
+        }
+        .onAppear {
+            loadArtwork()
+        }
+    }
+
+    private func loadArtwork() {
+        guard let path = album.coverArtPath else { return }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let url = docs.appendingPathComponent(path)
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            if let image = UIImage(contentsOfFile: url.path) {
+                DispatchQueue.main.async {
+                    self.artwork = image
+                }
+            }
+        }
+    }
+}
+
+struct AlbumSongListView: View {
+    let album: Album
+    @StateObject private var viewModel: SongListViewModel
+
+    init(album: Album, songRepo: SongRepository) {
+        self.album = album
+        _viewModel = StateObject(
+            wrappedValue: SongListViewModel(
+                songRepo: songRepo,
+                filter: .album(album.name, artist: album.artist))
+        )
+    }
+
+    var body: some View {
+        SongListView(viewModel: viewModel)
+            .navigationTitle(album.name)
+            .onAppear {
+                Task { await viewModel.loadInitialSongs() }
+            }
+    }
+}
 
 struct LibraryView: View {
+    enum ViewMode: String, CaseIterable {
+        case artists, albums, songs
+    }
+
+    @State private var selectedMode: ViewMode = .songs
+    @StateObject private var songListVM: SongListViewModel
+    @StateObject private var artistVM: ArtistListViewModel
+    @StateObject private var albumVM: AlbumListViewModel
+
+    let songRepo: SongRepository
+
+    init(songRepo: SongRepository) {
+        self.songRepo = songRepo
+        _artistVM = StateObject(wrappedValue: ArtistListViewModel(songRepo: songRepo))
+        _songListVM = StateObject(wrappedValue: SongListViewModel(songRepo: songRepo, filter: .all))
+        _albumVM = StateObject(wrappedValue: AlbumListViewModel(songRepo: songRepo))
+    }
+
     var body: some View {
-        // should list all songs with search
-        // when song is selected, starts playing it
-        Text("library").font(.largeTitle).foregroundColor(.purple)
+        NavigationStack {
+
+            VStack {
+                Picker("View Mode", selection: $selectedMode) {
+                    ForEach(ViewMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue.capitalized)
+                    }
+                }
+                .pickerStyle(SegmentedPickerStyle())
+                .padding()
+
+                switch selectedMode {
+                case .artists:
+                    ArtistListView(songRepo: songRepo, viewModel: artistVM)
+                case .albums:
+                    AlbumGridView(songRepo: songRepo, viewModel: albumVM)
+                case .songs:
+                    SongListView(viewModel: songListVM)
+                }
+            }
+            .onAppear {
+                Task {
+                    try? await artistVM.loadArtists()
+                    try? await albumVM.loadAlbums()
+                }
+            }
+        }
     }
 }
 
@@ -757,14 +1067,45 @@ class LibraryBrowseViewModel: ObservableObject {
         }
     }
 }
+
 struct LibraryBrowseView: View {
+    let libraryId: Int64
+    let parentPathId: Int64?
+    let libraryImportService: LibraryImportService?
+    let songImportService: SongImportService?
+
+    init(
+        libraryId: Int64,
+        parentPathId: Int64?,
+        libraryImportService: LibraryImportService?,
+        songImportService: SongImportService?
+    ) {
+        self.libraryId = libraryId
+        self.parentPathId = parentPathId
+        self.libraryImportService = libraryImportService
+        self.songImportService = songImportService
+    }
+
+    var body: some View {
+        if let service = libraryImportService, let importService = songImportService {
+            LibraryBrowseViewInternal(
+                libraryId: libraryId,
+                parentPathId: parentPathId,
+                libraryImportService: service,
+                songImportService: importService
+            )
+        } else {
+            Text("Services not available")
+                .foregroundColor(.red)
+        }
+    }
+}
+
+struct LibraryBrowseViewInternal: View {
     @StateObject var viewModel: LibraryBrowseViewModel
     @State private var showImportProgress = false
     @State private var importProgress: Double = 0
     @State private var currentFileName: String = ""
-
-    // Add a reference to your SongImportService somehow
-    // For example, you can pass it in or get it from AppDependencies
     let songImportService: SongImportService
 
     init(
@@ -965,14 +1306,17 @@ struct SelectFolderView: View {
     }
 }
 
+extension Library {
+    var rootPathId: Int64 {
+        hashStringToInt64(self.dirPath)
+    }
+}
+
 struct SyncView: View {
     @StateObject private var syncViewModel: SyncViewModel
-    @State var isPickingFolder = false
-    @State var pickedFolder: String? = nil
-
+    @State private var showingFolderPicker = false
     private let logger = Logger(subsystem: subsystem, category: "SyncView")
 
-    private let songImportService: SongImportService?
     init(
         userCloudService: UserCloudService?,
         icloudProvider: ICloudProvider?,
@@ -983,134 +1327,171 @@ struct SyncView: View {
             wrappedValue: SyncViewModel(
                 userCloudService: userCloudService,
                 icloudProvider: icloudProvider,
-                libraryService: libraryService))
-        self.songImportService = songImportService
+                libraryService: libraryService,
+                songImportService: songImportService
+            )
+        )
     }
 
     var body: some View {
-        VStack {
-            switch syncViewModel.state {
-            case .noICloud:
-                SelectFolderView(
-                    title: "No ICLOUD",
-                    message: "this tab requires iCloud",
-                    backgroundColor: Color.orange,
-                    iconName: "xmark.circle.fill"
-                )
-            case .isInitialising:
-                VStack {
-                    Text("Loading...")
-                }.onAppear {
-                    logger.debug("running sync view model")
-                    syncViewModel.initialise()
-                }
-            case .noLibraryDirSet:
-                SelectFolderView(
-                    onAction: {
-                        logger.debug("attempting to click")
-                        isPickingFolder = true
-                    },
-                    backgroundColor: Color.purple
-                ).fileImporter(
-                    isPresented: $isPickingFolder,
-                    allowedContentTypes: [.folder],
-                    allowsMultipleSelection: false
-                ) { result in
-                    switch result {
-                    case .success(let urls) where urls.count != 0:
-                        if let folderURL = urls.first {
-                            do {
-                                try self.syncViewModel.registerBookmark(folderURL)
-                                self.pickedFolder = folderURL.absoluteString
-                            } catch {
-                                logger.debug("picker error \(error)")
-                            }
-                        } else {
-                            logger.debug("couldn't get url")
-                        }
-                    default:
-                        logger.debug("couldn't get url")
-                    }
-                }
-            case .notSyncedYet:
-                VStack {
-                    let selectedFolderName = syncViewModel.selectedFolderName ?? ""
-                    Text("not synced: \(selectedFolderName)")
-                    Text("Plase start")
-                    Button("Sync now") {
-                        syncViewModel.sync()
-                    }
-                }
-            case .showTreeView:
-                VStack {
-                    let totalFiles = syncViewModel.currentLibrary?.totalPaths ?? 0
-                    Text("file select view! \(totalFiles)")
-                    Button("Sync now") {
-                        syncViewModel.sync()
-                    }
-                    Button("resync") {
-                        logger.debug("attempting to click")
-                        isPickingFolder = true
-                    }
-                    .padding(20)
-                    .fileImporter(
-                        isPresented: $isPickingFolder,
-                        allowedContentTypes: [.folder],
-                        allowsMultipleSelection: false
-                    ) { result in
-                        switch result {
-                        case .success(let urls) where urls.count != 0:
-                            if let folderURL = urls.first {
-                                do {
-                                    try self.syncViewModel.registerBookmark(folderURL)
-                                    self.pickedFolder = folderURL.absoluteString
-                                } catch {
-                                    logger.debug("picker error \(error)")
-                                }
-                            } else {
-                                logger.debug("couldn't get url")
-                            }
-                        default:
-                            logger.debug("couldn't get url")
-                        }
-                    }
-                    if let library = syncViewModel.currentLibrary,
-                        let ls = syncViewModel.libraryService
-                    {
-                        let libraryId = library.id
-                        let parentPathId = hashStringToInt64(library.dirPath)
-                        if let songImportService = songImportService {
-                            LibraryBrowseView(
-                                libraryId: libraryId!,
-                                parentPathId: parentPathId,
-                                libraryImportService: ls.importService(),
-                                songImportService: songImportService)
-                        } else {
-                            Text("song import service is not avaialabe")
-                        }
-
-                    }
-                }
-            case .syncInProgress:
-                VStack {
-                    Text("syncing")
-                    if let currentDir = syncViewModel.currentSyncedDir {
-                        Text("curr: \(currentDir)")
-                    }
-                }
-            case .unboundView:
-                VStack {
-                    Text("unknown state")
+        NavigationStack {
+            Group {
+                if syncViewModel.libraries.isEmpty {
+                    emptyStateView
+                } else {
+                    libraryGridView
                 }
             }
-        }.onChange(of: pickedFolder) {
-            if let pickedFolder = pickedFolder {
-                syncViewModel.registerPath(pickedFolder)
-                logger.debug("updated path")
-            } else {
-                logger.debug("no path")
+            .navigationTitle("Music Libraries")
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        showingFolderPicker = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
+                }
             }
         }
+        .fileImporter(
+            isPresented: $showingFolderPicker,
+            allowedContentTypes: [.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            handleFolderSelection(result: result)
+        }
+        .onAppear {
+            syncViewModel.loadLibraries()
+        }
+    }
+
+    // NEW: Grid view for libraries
+    private var libraryGridView: some View {
+        ScrollView {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 20)], spacing: 20) {
+                ForEach(syncViewModel.libraries, id: \.stableId) { (library: Library) in
+                    NavigationLink {
+                        if let libraryId = library.id {
+                            LibraryBrowseView(
+                                libraryId: libraryId,
+                                parentPathId: library.rootPathId,
+                                libraryImportService: syncViewModel.libraryService?.importService(),
+                                songImportService: syncViewModel.songImportService
+                            )
+                        }
+                    } label: {
+                        LibraryGridCell(
+                            library: library,
+                            onResync: { syncViewModel.resyncLibrary(library) }
+                        )
+                        .padding()
+                        .background(Color(.secondarySystemBackground))
+                        .cornerRadius(12)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .padding()
+        }
+    }
+
+    // NEW: Empty state view
+    private var emptyStateView: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 60))
+                .foregroundColor(.blue)
+            Text("No Libraries Added")
+                .font(.title2)
+            Text("Get started by adding your first music library from iCloud")
+                .multilineTextAlignment(.center)
+                .foregroundColor(.secondary)
+            Button("Add iCloud Library") {
+                showingFolderPicker = true
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        .padding()
+        .frame(maxHeight: .infinity)
+    }
+
+    // NEW: Folder selection handler
+    private func handleFolderSelection(result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            do {
+                try syncViewModel.registerBookmark(url)
+                syncViewModel.createLibrary(path: url.path)
+            } catch {
+                logger.error("Folder selection error: \(error.localizedDescription)")
+            }
+        case .failure(let error):
+            logger.error("Folder picker error: \(error.localizedDescription)")
+        }
+    }
+}
+
+// NEW: Library grid cell component
+struct LibraryGridCell: View {
+    let library: Library
+    let onResync: () -> Void
+    @State private var isSyncing = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: libraryTypeIcon)
+                    .font(.title)
+                    .foregroundColor(libraryTypeColor)
+
+                VStack(alignment: .leading) {
+                    Text(library.dirPath.components(separatedBy: "/").last ?? "Library")
+                        .font(.headline)
+                        .lineLimit(1)
+                    Text(library.dirPath)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                if isSyncing {
+                    ProgressView()
+                } else {
+                    Button(action: onResync) {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                }
+            }
+
+            Text(lastSyncText)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.tertiarySystemBackground))
+        .cornerRadius(8)
+    }
+
+    private var libraryTypeIcon: String {
+        switch library.type {
+        case .iCloud: return "icloud.fill"
+        default: return "folder.fill"
+        }
+    }
+
+    private var libraryTypeColor: Color {
+        switch library.type {
+        case .iCloud: return .blue
+        default: return .gray
+        }
+    }
+
+    private var lastSyncText: String {
+        guard let date = library.lastSyncedAt else { return "Never synced" }
+        return "Last sync: \(date.formatted(date: .abbreviated, time: .shortened))"
     }
 }
 
@@ -1122,8 +1503,10 @@ enum SyncViewState {
 
 @MainActor
 class SyncViewModel: ObservableObject {
+    @Published var libraries: [Library] = []
     @Published var createdUser: User?
     @Published var errorMessage: String?
+    @Published var currentSyncLibraryId: Int64?
 
     @Published var selectedFolderName: String? = nil
     @Published var currentLibrary: Library?
@@ -1133,15 +1516,107 @@ class SyncViewModel: ObservableObject {
     private let userCloudService: UserCloudService?
     private let icloudProvider: ICloudProvider?
     let libraryService: LibraryService?
+    let songImportService: SongImportService?
 
     init(
         userCloudService: UserCloudService?,
         icloudProvider: ICloudProvider?,
-        libraryService: LibraryService?
+        libraryService: LibraryService?,
+        songImportService: SongImportService?
     ) {
         self.userCloudService = userCloudService
         self.icloudProvider = icloudProvider
         self.libraryService = libraryService
+        self.songImportService = songImportService
+    }
+
+    // NEW: Load all libraries
+    func loadLibraries() {
+        Task {
+            do {
+                guard let currentUser = try await userCloudService?.resolveCurrentICloudUser()
+                else {
+                    errorMessage = "User not logged in"
+                    return
+                }
+
+                libraries =
+                    try await libraryService?.repository()
+                    .findOneByUserId(userId: currentUser.id ?? -1, path: nil) ?? []
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    // NEW: Create new library with auto-sync
+    func createLibrary(path: String) {
+        Task {
+            do {
+                guard let currentUser = try await userCloudService?.resolveCurrentICloudUser(),
+                    let service = libraryService
+                else {
+                    errorMessage = "User not available"
+                    return
+                }
+
+                let library = try await service.registerLibraryPath(
+                    userId: currentUser.id ?? -1,
+                    path: path,
+                    type: .iCloud
+                )
+
+                libraries.append(library)
+                try await syncLibrary(library)
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    // NEW: Resync functionality
+    func resyncLibrary(_ library: Library) {
+        Task {
+            do {
+                try await syncLibrary(library)
+                loadLibraries()  // Refresh list
+            } catch {
+                errorMessage = error.localizedDescription
+            }
+        }
+    }
+
+    // NEW: Unified sync method
+    private func syncLibrary(_ library: Library) async throws {
+        currentSyncLibraryId = library.id
+        defer { currentSyncLibraryId = nil }
+
+        guard let libraryId = library.id else {
+            throw CustomError.genericError("Invalid library ID")
+        }
+
+        let folderURL = try resolveLibraryURL(library)
+        _ = try await libraryService?.syncService().syncDir(
+            libraryId: libraryId,
+            folderURL: folderURL,
+            onCurrentURL: { _ in },
+            onSetLoading: { _ in }
+        )
+    }
+    // NEW: Helper to resolve library URL
+    private func resolveLibraryURL(_ library: Library) throws -> URL {
+        let bookmarkKey = String(hashStringToInt64(library.dirPath))
+        guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
+            throw CustomError.genericError("Missing bookmark data")
+        }
+
+        var isStale = false
+        return try URL(
+            resolvingBookmarkData: bookmarkData,
+            options: [],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        )
     }
 
     var state: SyncViewState {

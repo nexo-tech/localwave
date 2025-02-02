@@ -31,7 +31,7 @@ enum LibraryType: String, Codable, CaseIterable {
     case iCloud
 }
 
-struct Library: Sendable {
+struct Library: Sendable, Identifiable {
     var id: Int64?
     var dirPath: String
     var userId: Int64
@@ -42,6 +42,10 @@ struct Library: Sendable {
     var createdAt: Date
     var lastSyncedAt: Date?
     var updatedAt: Date?
+
+    var stableId: Int64 {
+        id ?? Int64(abs(dirPath.hashValue))
+    }
 }
 
 struct LibraryPath: Sendable {
@@ -59,6 +63,20 @@ struct LibraryPath: Sendable {
 
     let createdAt: Date
     let updatedAt: Date?
+}
+
+struct Album: Identifiable, Hashable {
+    let id: String
+    let name: String
+    let artist: String?
+    let coverArtPath: String?
+
+    init(name: String, artist: String?, coverArtPath: String?) {
+        self.id = "\(artist ?? "")-\(name)"
+        self.name = name
+        self.artist = artist
+        self.coverArtPath = coverArtPath
+    }
 }
 
 /// Example song model, no libraryId. We store all metadata ourselves.
@@ -175,6 +193,9 @@ protocol SongRepository {
     /// ordered by `bm25(...)`.
     func searchSongsFTS(query: String, limit: Int, offset: Int) async throws -> [Song]
     func totalSongCount(query: String) async throws -> Int
+
+    func getAllArtists() async throws -> [String]
+    func getAllAlbums() async throws -> [Album]
 }
 
 protocol LibraryImportService {
@@ -1108,14 +1129,6 @@ actor SQLiteLibraryRepository: LibraryRepository {
         self.colLastSyncedAt = colLastSyncedAt
         self.colUpdatedAt = colUpdatedAt
         self.colType = colType
-
-        // Add column migration for existing installations
-        do {
-            try db.run(table.addColumn(colType))
-            logger.debug("Added type column to libraries table")
-        } catch {
-            logger.debug("Type column already exists: \(error.localizedDescription)")
-        }
     }
 
     func getOne(id: Int64) async throws -> Library? {
@@ -1822,5 +1835,55 @@ actor SQLiteSongRepository: SongRepository {
             results.append(song)
         }
         return results
+    }
+    func getAllArtists() async throws -> [String] {
+        let query = songsTable.select(colArtist).group(colArtist)
+        return try db.prepare(query).compactMap { $0[colArtist] }
+    }
+
+    func getAllAlbums() async throws -> [Album] {
+        let query = songsTable.select(colAlbum, colArtist, colCoverArtPath)
+            .group(colAlbum)
+
+        var albums = [Album]()
+        for row in try db.prepare(query) {
+            let albumName = row[colAlbum]
+            let artist = row[colArtist]
+            let coverPath = row[colCoverArtPath]
+            albums.append(Album(name: albumName, artist: artist, coverArtPath: coverPath))
+        }
+        return albums
+    }
+
+    func getSongsByArtist(_ artist: String) async throws -> [Song] {
+        let query = songsTable.filter(colArtist == artist)
+        return try parseSongsFromRows(db.prepare(query))
+    }
+
+    func getSongsByAlbum(_ album: String, artist: String?) async throws -> [Song] {
+        var query = songsTable.filter(colAlbum == album)
+        if let artist = artist {
+            query = query.filter(colArtist == artist)
+        }
+        return try parseSongsFromRows(db.prepare(query))
+    }
+
+    private func parseSongsFromRows(_ rows: AnySequence<Row>) throws -> [Song] {
+        return rows.map { row in
+            let bookmarkBlob = row[colBookmark]
+            let bookmarkData = bookmarkBlob.map { Data($0.bytes) }
+
+            return Song(
+                id: row[colId],
+                songKey: row[colSongKey],
+                artist: row[colArtist],
+                title: row[colTitle],
+                album: row[colAlbum],
+                coverArtPath: row[colCoverArtPath],
+                bookmark: bookmarkData,
+                createdAt: Date(timeIntervalSince1970: row[colCreatedAt]),
+                updatedAt: row[colUpdatedAt].map(Date.init(timeIntervalSince1970:))
+            )
+        }
     }
 }
