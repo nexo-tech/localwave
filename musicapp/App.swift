@@ -6,7 +6,6 @@ import os
 
 /// subsystem used in logs
 let subsystem = "com.snowbear.musicapp"
-let baseLogger = Logger(subsystem: subsystem, category: "General")
 
 enum CustomError: Error {
     case genericError(_ message: String)
@@ -34,6 +33,7 @@ enum LibraryType: String, Codable, CaseIterable {
 struct Library: Sendable, Identifiable {
     var id: Int64?
     var dirPath: String
+    var pathId: Int64
     var userId: Int64
     var type: LibraryType?
     var totalPaths: Int?
@@ -128,14 +128,15 @@ func generateSongKey(artist: String, title: String, album: String) -> Int64 {
 }
 
 func setupSQLiteConnection(dbName: String) -> Connection? {
-    baseLogger.debug("setting up connection ...")
+    let logger = Logger(subsystem: subsystem, category: "setupSQLiteConnection")
+    logger.debug("setting up connection ...")
     let dbPath = NSSearchPathForDirectoriesInDomains(
         .documentDirectory,
         .userDomainMask,
         true
     ).first!
     let dbFullPath = "\(dbPath)/\(dbName)"
-    baseLogger.debug("db path: \(dbFullPath)")
+    logger.debug("db path: \(dbFullPath)")
     do {
         return try Connection(dbFullPath)
     } catch {
@@ -733,6 +734,7 @@ actor DefaultLibrarySyncService: LibrarySyncService {
             let itemsToCreate = result?.allItems.map { x in
                 var parentPathId: Int64? = nil
                 if let parentPath = x.parentURL?.absoluteString {
+                  logger.debug("creating parent path: \(parentPath)")
                     parentPathId = hashStringToInt64(parentPath)
                 }
                 let pathId = hashStringToInt64(x.url.absoluteString)
@@ -778,6 +780,12 @@ actor DefaultLibrarySyncService: LibrarySyncService {
                 }
             }
 
+            if var lib = try await libraryRepository.getOne(id: libraryId) {
+                lib.lastSyncedAt = Date()
+                lib.updatedAt = Date()
+                lib.totalPaths = result?.totalAudioFiles ?? 0  // Ensure totalPaths is set
+                return try await libraryRepository.updateLibrary(library: lib)
+            }
             return nil
         } catch {
             logger.error("sync dir error: \(error)")
@@ -909,8 +917,10 @@ class DefaultLibraryService: LibraryService {
         if library.count == 0 {
             logger.debug("no library found, creating new one")
             // Create new library
+          
+          let pathId  = hashStringToInt64(URL(fileURLWithPath: path).absoluteString)
             let lib = Library(
-                id: nil, dirPath: path, userId: userId, type: type, totalPaths: nil, syncError: nil,
+              id: nil, dirPath: path, pathId: pathId, userId: userId, type: type, totalPaths: nil, syncError: nil,
                 isCurrent: true, createdAt: Date(), lastSyncedAt: nil, updatedAt: nil)
             let library = try await libraryRepo.create(library: lib)
             logger.debug("updating current switch")
@@ -992,6 +1002,7 @@ class DefaultICloudProvider: ICloudProvider {
     }
 
     func getCurrentICloudUserID() async throws -> Int64? {
+        logger.debug("Attempting to get current iCloud user")
         if let ubiquityIdentityToken = FileManager.default.ubiquityIdentityToken {
             let tokenData = try NSKeyedArchiver.archivedData(
                 withRootObject: ubiquityIdentityToken, requiringSecureCoding: true)
@@ -1100,6 +1111,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
     private var colType: SQLite.Expression<String?>
     private var colId: SQLite.Expression<Int64>
     private var colDirPath: SQLite.Expression<String>
+    private var colPathId: SQLite.Expression<Int64>
     private var colUserId: SQLite.Expression<Int64>
     private var colTotalPaths: SQLite.Expression<Int?>
     private var colSyncError: SQLite.Expression<String?>
@@ -1114,6 +1126,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
         // Existing columns
         let colId = SQLite.Expression<Int64>("id")
         let colDirPath = SQLite.Expression<String>("dirPath")
+        let colPathId = SQLite.Expression<Int64>("pathId")
         let colUserId = SQLite.Expression<Int64>("userId")
         let colTotalPaths = SQLite.Expression<Int?>("totalPaths")
         let colSyncError = SQLite.Expression<String?>("syncError")
@@ -1130,6 +1143,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
             table.create(ifNotExists: true) { t in
                 t.column(colId, primaryKey: .autoincrement)
                 t.column(colDirPath)
+                t.column(colPathId)
                 t.column(colUserId)
                 t.column(colType)
                 t.column(colTotalPaths)
@@ -1142,6 +1156,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
 
         self.colId = colId
         self.colDirPath = colDirPath
+        self.colPathId = colPathId
         self.colUserId = colUserId
         self.colTotalPaths = colTotalPaths
         self.colSyncError = colSyncError
@@ -1158,6 +1173,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
             return Library(
                 id: row[colId],
                 dirPath: row[colDirPath],
+                pathId: row[colPathId],
                 userId: row[colUserId],
                 type: row[colType].flatMap(LibraryType.init(rawValue:)),  // Map from String?
                 totalPaths: row[colTotalPaths],
@@ -1175,6 +1191,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
         // Force explicit type setting (even if nil)
         let insert = table.insert(
             colDirPath <- library.dirPath,
+            colPathId <- library.pathId,
             colUserId <- library.userId,
             colType <- library.type?.rawValue,  // Explicit null if type is nil
             colTotalPaths <- library.totalPaths,
@@ -1191,6 +1208,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
         return Library(
             id: rowId,
             dirPath: library.dirPath,
+            pathId: library.pathId,
             userId: library.userId,
             type: library.type,  // Preserve original type
             totalPaths: library.totalPaths,
@@ -1212,6 +1230,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
             Library(
                 id: row[colId],
                 dirPath: row[colDirPath],
+                pathId: row[colPathId],
                 userId: row[colUserId],
                 type: row[colType].flatMap(LibraryType.init(rawValue:)),
                 totalPaths: row[colTotalPaths],
@@ -1233,6 +1252,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
         try db.run(
             query.update(
                 colDirPath <- library.dirPath,
+                colPathId <- library.pathId,
                 colType <- library.type?.rawValue,
                 colTotalPaths <- library.totalPaths,
                 colSyncError <- library.syncError,
@@ -1257,6 +1277,7 @@ actor SQLiteLibraryRepository: LibraryRepository {
         return Library(
             id: row[colId],
             dirPath: row[colDirPath],
+            pathId: row[colPathId],
             userId: row[colUserId],
             type: row[colType].flatMap(LibraryType.init(rawValue:)),
             totalPaths: row[colTotalPaths],
@@ -1839,12 +1860,13 @@ actor SQLiteSongRepository: SongRepository {
             let artist = (row[2] as? String) ?? ""
             let title = (row[3] as? String) ?? ""
             let album = (row[4] as? String) ?? ""
-            let coverArtPath = row[5] as? String
-            let bookmarkBlob = row[6] as? Blob
+            let trackNumber = (row[5] as? Int)
+            let coverArtPath = row[6] as? String
+            let bookmarkBlob = row[7] as? Blob
             let bookmarkData = bookmarkBlob.map { Data($0.bytes) }
-            let createdDouble = row[7] as? Double ?? 0
+            let createdDouble = row[8] as? Double ?? 0
             let createdAt = Date(timeIntervalSince1970: createdDouble)
-            let updatedDouble = row[8] as? Double
+            let updatedDouble = row[9] as? Double
             let updatedAt = updatedDouble.map { Date(timeIntervalSince1970: $0) }
 
             let song = Song(
@@ -1853,6 +1875,7 @@ actor SQLiteSongRepository: SongRepository {
                 artist: artist,
                 title: title,
                 album: album,
+                trackNumber: trackNumber,
                 coverArtPath: coverArtPath,
                 bookmark: bookmarkData,
                 createdAt: createdAt,
@@ -1905,7 +1928,7 @@ actor SQLiteSongRepository: SongRepository {
                 artist: row[colArtist],
                 title: row[colTitle],
                 album: row[colAlbum],
-                trackNumber: trackNumber,
+                trackNumber: row[colTrackNumber],
                 coverArtPath: row[colCoverArtPath],
                 bookmark: bookmarkData,
                 createdAt: Date(timeIntervalSince1970: row[colCreatedAt]),
