@@ -85,9 +85,10 @@ struct MainTabView: View {
 
 // MARK: - SongRow View
 struct SongRow: View {
+    @ObservedObject private var playerVM = PlayerViewModel.shared  // NEW: Observe the shared PlayerViewModel here
     let song: Song
-    let isPlaying: Bool
     let onPlay: () -> Void
+
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
@@ -98,7 +99,7 @@ struct SongRow: View {
                     .foregroundColor(.secondary)
             }
             Spacer()
-            if isPlaying {
+            if song.id == playerVM.currentSong?.id && playerVM.isPlaying {
                 // This icon serves as a playing indicator.
                 Image(systemName: "speaker.wave.2.fill")
                     .foregroundColor(.green)
@@ -179,7 +180,21 @@ class SongListViewModel: ObservableObject {
 
     private func loadTotalSongs() async {
         do {
-            let count = try await songRepo.totalSongCount(query: currentQuery)
+            let countQuery: String
+            switch filter {
+            case .all:
+                countQuery = currentQuery
+            case .artist(let artist):
+                let artistFilter = "artist:\"\(artist)\""
+                countQuery = currentQuery.isEmpty ? artistFilter : "\(currentQuery) \(artistFilter)"
+            case .album(let album, let artist):
+                var albumFilter = "album:\"\(album)\""
+                if let artist = artist {
+                    albumFilter += " artist:\"\(artist)\""
+                }
+                countQuery = currentQuery.isEmpty ? albumFilter : "\(currentQuery) \(albumFilter)"
+            }
+            let count = try await songRepo.totalSongCount(query: countQuery)
             totalSongs = count
             logger.debug("Total songs loaded: \(count)")
         } catch {
@@ -194,7 +209,6 @@ class SongListViewModel: ObservableObject {
         }
     }
 
-    // NEW: Modified loadMoreSongs to use loadFilteredSongs
     func loadMoreSongs() async {
         guard !isLoadingPage && hasMorePages else { return }
         isLoadingPage = true
@@ -210,7 +224,6 @@ class SongListViewModel: ObservableObject {
         isLoadingPage = false
     }
 
-    // NEW: Modified searchSongs to use loadFilteredSongs
     func searchSongs(query: String) async {
         currentQuery = query
         currentPage = 0
@@ -232,20 +245,19 @@ class SongListViewModel: ObservableObject {
         }
     }
 
-    // NEW: Updated loadInitialSongs
     func loadInitialSongs() async {
         currentPage = 0
         songs = []
         hasMorePages = true
         currentQuery = ""
 
-        // CHANGED THIS SECTION
         do {
             let initialSongs = try await loadFilteredSongs()
             songs = initialSongs
-            if initialSongs.count == pageSize {
-                hasMorePages = true
-                currentPage = 1
+            if initialSongs.count < pageSize {
+                hasMorePages = false  // No more pages if we didn't get a full page
+            } else {
+                currentPage = 1  // Advance to next page if a full page was returned
             }
             await loadTotalSongs()
         } catch {
@@ -259,14 +271,15 @@ struct SongListView: View {
     @ObservedObject private var viewModel: SongListViewModel
     @State private var searchText: String = ""
     @State private var isPlayerPresented: Bool = false
-    @ObservedObject private var playerVM: PlayerViewModel = PlayerViewModel.shared
+    private let logger = Logger(subsystem: subsystem, category: "SongListView")
 
     init(viewModel: SongListViewModel) {
         self.viewModel = viewModel
     }
 
     var body: some View {
-        VStack {
+        logger.debug("songs: \(viewModel.songs.count)")
+        return VStack {
             SearchBar(
                 text: $searchText,
                 onChange: { newValue in
@@ -282,14 +295,15 @@ struct SongListView: View {
                 .padding(.horizontal)
 
             List {
-                ForEach(Array(viewModel.songs.enumerated()), id: \.element.id) { index, song in
+                ForEach(Array(viewModel.songs.enumerated()), id: \.element.uniqueId) {
+                    index, song in
                     SongRow(
                         song: song,
-                        isPlaying: (song.id == playerVM.currentSong?.id && playerVM.isPlaying),
                         onPlay: {
                             // Populate the player queue and play the tapped song
-                            playerVM.configureQueue(songs: viewModel.songs, startIndex: index)
-                            playerVM.playSong(song)
+                            PlayerViewModel.shared.configureQueue(
+                                songs: viewModel.songs, startIndex: index)
+                            PlayerViewModel.shared.playSong(song)
                         }
                     )
                     .onAppear {
@@ -1365,7 +1379,6 @@ struct SyncView: View {
         }
     }
 
-    // NEW: Grid view for libraries
     private var libraryGridView: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 20)], spacing: 20) {
@@ -1382,6 +1395,7 @@ struct SyncView: View {
                     } label: {
                         LibraryGridCell(
                             library: library,
+                            isSyncing: syncViewModel.currentSyncLibraryId == library.id,
                             onResync: { syncViewModel.resyncLibrary(library) }
                         )
                         .padding()
@@ -1395,7 +1409,6 @@ struct SyncView: View {
         }
     }
 
-    // NEW: Empty state view
     private var emptyStateView: some View {
         VStack(spacing: 20) {
             Image(systemName: "folder.badge.plus")
@@ -1415,7 +1428,6 @@ struct SyncView: View {
         .frame(maxHeight: .infinity)
     }
 
-    // NEW: Folder selection handler
     private func handleFolderSelection(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
@@ -1432,11 +1444,10 @@ struct SyncView: View {
     }
 }
 
-// NEW: Library grid cell component
 struct LibraryGridCell: View {
     let library: Library
+    let isSyncing: Bool
     let onResync: () -> Void
-    @State private var isSyncing = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1446,7 +1457,7 @@ struct LibraryGridCell: View {
                     .foregroundColor(libraryTypeColor)
 
                 VStack(alignment: .leading) {
-                    Text(library.dirPath.components(separatedBy: "/").last ?? "Library")
+                    Text(dirName)
                         .font(.headline)
                         .lineLimit(1)
                     Text(library.dirPath)
@@ -1473,6 +1484,10 @@ struct LibraryGridCell: View {
         .padding()
         .background(Color(.tertiarySystemBackground))
         .cornerRadius(8)
+    }
+
+    private var dirName: String {
+        return URL(fileURLWithPath: library.dirPath).lastPathComponent
     }
 
     private var libraryTypeIcon: String {
@@ -1530,7 +1545,6 @@ class SyncViewModel: ObservableObject {
         self.songImportService = songImportService
     }
 
-    // NEW: Load all libraries
     func loadLibraries() {
         Task {
             do {
@@ -1549,7 +1563,6 @@ class SyncViewModel: ObservableObject {
         }
     }
 
-    // NEW: Create new library with auto-sync
     func createLibrary(path: String) {
         Task {
             do {
@@ -1574,7 +1587,6 @@ class SyncViewModel: ObservableObject {
         }
     }
 
-    // NEW: Resync functionality
     func resyncLibrary(_ library: Library) {
         Task {
             do {
@@ -1586,7 +1598,6 @@ class SyncViewModel: ObservableObject {
         }
     }
 
-    // NEW: Unified sync method
     private func syncLibrary(_ library: Library) async throws {
         currentSyncLibraryId = library.id
         defer { currentSyncLibraryId = nil }
@@ -1603,7 +1614,7 @@ class SyncViewModel: ObservableObject {
             onSetLoading: { _ in }
         )
     }
-    // NEW: Helper to resolve library URL
+
     private func resolveLibraryURL(_ library: Library) throws -> URL {
         let bookmarkKey = String(hashStringToInt64(library.dirPath))
         guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
