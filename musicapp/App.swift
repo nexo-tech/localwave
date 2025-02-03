@@ -72,9 +72,12 @@ struct Album: Identifiable, Hashable {
     let coverArtPath: String?
 
     init(name: String, artist: String?, coverArtPath: String?) {
-        self.id = "\(artist ?? "")-\(name)"
-        self.name = name
-        self.artist = artist
+        let cleanedName = name.isEmpty ? "Unknown Album" : name
+        let cleanedArtist = artist?.isEmpty ?? true ? nil : artist
+
+        self.id = "\(cleanedArtist ?? "Unknown Artist")-\(cleanedName)"
+        self.name = cleanedName
+        self.artist = cleanedArtist
         self.coverArtPath = coverArtPath
     }
 }
@@ -164,8 +167,56 @@ struct AppDependencies {
     let libraryService: LibraryService
     let songRepository: SongRepository
     let songImportService: SongImportService
+    let playerPersistenceService: PlayerPersistenceService
 }
 
+protocol PlayerPersistenceService {
+    func getVolume() async -> Float
+    func restore() async -> ([Song], Int, Song?)?
+    func savePlaybackState(volume: Float, currentIndex: Int, songs: [Song]) async
+}
+
+actor DefaultPlayerPersistenceService: PlayerPersistenceService {
+    private let queueKey = "currentQueue"
+    private let currentIndexKey = "currentQueueIndex"
+    private let volumeKey = "playerVolume"
+
+    private let songRepo: SongRepository
+
+    init(songRepo: SongRepository) {
+        self.songRepo = songRepo
+    }
+
+    func getVolume() async -> Float {
+        UserDefaults.standard.float(forKey: volumeKey)
+    }
+
+    let logger = Logger(subsystem: subsystem, category: "PlayerPersistenceService")
+
+    func restore() async -> ([Song], Int, Song?)? {
+        guard let songIds = UserDefaults.standard.array(forKey: queueKey) as? [Int64],
+            let currentIndex = UserDefaults.standard.value(forKey: currentIndexKey) as? Int,
+            !songIds.isEmpty
+        else {
+            logger.debug("no persisted data, skipping")
+            return nil
+        }
+
+        // Need to inject song repository
+        logger.debug("loading songs by ids: \(songIds)")
+        let songs = await songRepo.getSongs(ids: songIds)
+        let currentSong = songs[safe: currentIndex]
+
+        return (songs, currentIndex, currentSong)
+    }
+
+    func savePlaybackState(volume: Float, currentIndex: Int, songs: [Song]) async {
+        let songIds = songs.map { $0.id ?? -1 }
+        UserDefaults.standard.set(songIds, forKey: queueKey)
+        UserDefaults.standard.set(currentIndex, forKey: currentIndexKey)
+        UserDefaults.standard.set(volume, forKey: volumeKey)
+    }
+}
 struct LibrarySyncResult {
     let allItems: [LibrarySyncResultItem]
     let audioFiles: [LibrarySyncResultItem]
@@ -203,17 +254,21 @@ protocol SongRepository {
 
     func getAllArtists() async throws -> [String]
     func getAllAlbums() async throws -> [Album]
+
+    func getSongs(ids: [Int64]) async -> [Song]
 }
 
 protocol LibraryImportService {
     func listItems(libraryId: Int64, parentPathId: Int64?) async throws -> [LibraryPath]
     func search(libraryId: Int64, query: String) async throws -> [LibraryPath]
+    func deleteOne(libraryId: Int64) async throws
 }
 
 protocol LibraryPathSearchRepository {
     func batchUpsertIntoFTS(paths: [LibraryPath]) async throws
     func search(libraryId: Int64, query: String, limit: Int) async throws -> [PathSearchResult]
     func batchDeleteFTS(libraryId: Int64, excludingRunId: Int64) async throws
+    func deleteAllFTS(libraryId: Int64) async throws
 }
 
 protocol LibrarySyncService {
@@ -514,41 +569,65 @@ actor DefaultSongImportService: SongImportService {
         artist: String, title: String, album: String, trackNumber: Int?
     ) {
         let asset = AVURLAsset(url: url)
+        var defaultSongTitle = url.lastPathComponent
+        if defaultSongTitle == "" {
+            defaultSongTitle = "Unknown Title"
+        }
         do {
-            let metadata = try await asset.load(.metadata)
             var artist = ""
             var title = ""
             var album = ""
-            var trackNumber: Int? = nil  // NEW: initialize trackNumber
+            var trackNumber: Int? = nil
 
-            for item in metadata {
-                guard let commonKey = item.commonKey else { continue }
-                switch commonKey {
-                case .commonKeyArtist:
-                    if let val = try? await item.load(.stringValue) { artist = val }
-                case .commonKeyTitle:
-                    if let val = try? await item.load(.stringValue) { title = val }
-                case .commonKeyAlbumName:
-                    if let val = try? await item.load(.stringValue) { album = val }
-                default:
-                    break
-                }
-                // NEW: Check for track number metadata using the identifier (e.g. "TRCK")
-                if trackNumber == nil, let keyIdentifier = item.identifier?.rawValue,
-                    keyIdentifier.contains("TRCK")
-                {
-                    if let val = try? await item.load(.stringValue) {
-                        // If track number is formatted like "5/12", take the first component.
-                        if let number = Int(val.split(separator: "/").first ?? "") {
-                            trackNumber = number
+            let formats = try await asset.load(.availableMetadataFormats)
+            for format in formats {
+                let metadata = try await asset.loadMetadata(for: format)
+
+                for item in metadata {
+                    if let commonKey = item.commonKey {
+                        switch commonKey {
+                        case .commonKeyArtist where artist == "":
+                            if let val = try? await item.load(.stringValue) { artist = val }
+                        case .commonKeyTitle where title == "":
+                            if let val = try? await item.load(.stringValue) { title = val }
+                        case .commonKeyAlbumName where album == "":
+                            if let val = try? await item.load(.stringValue) { album = val }
+                        case .id3MetadataKeyTrackNumber where trackNumber == nil:
+                            if let val = try? await item.load(.numberValue) {
+                                trackNumber = val.intValue
+                            }
+                        default:
+                            break
                         }
                     }
+
+                    let itemKey = item.key as? String
+                    if let key = itemKey {
+                        switch key {
+                        case "TRCK":  // Track number
+                            if let val = try? await item.load(.stringValue) {
+                                // Handle formats like "5" or "5/12"
+                                let cleanString = val.components(separatedBy: "/").first ?? val
+                                if let number = Int(cleanString) {
+                                    trackNumber = number
+                                }
+                            }
+                        default:
+                            break
+                        }
+                    }
+
                 }
             }
-            return (artist, title, album, trackNumber)
+
+            let cleanedArtist = artist.isEmpty ? "Unknown Artist" : artist
+            let cleanedTitle = title.isEmpty ? defaultSongTitle : title
+            let cleanedAlbum = album.isEmpty ? "Unknown Album" : album
+
+            return (cleanedArtist, cleanedTitle, cleanedAlbum, trackNumber)
         } catch {
             logger.error("Failed to read metadata: \(error)")
-            return ("", "", "", nil)
+            return ("Unknown Artist", defaultSongTitle, "Unknown Album", nil)
         }
     }
 
@@ -659,6 +738,26 @@ func preprocessFTSQuery(_ input: String) -> String {
 }
 actor DefaultLibraryImportService: LibraryImportService {
     let logger = Logger(subsystem: subsystem, category: "LibraryImportService")
+
+    private let libraryPathRepository: LibraryPathRepository
+    private let libraryPathSearchRepository: LibraryPathSearchRepository
+
+    init(
+        libraryRepository: LibraryRepository,
+        libraryPathRepository: LibraryPathRepository,
+        libraryPathSearchRepository: LibraryPathSearchRepository
+    ) {
+        self.libraryRepository = libraryRepository
+        self.libraryPathRepository = libraryPathRepository
+        self.libraryPathSearchRepository = libraryPathSearchRepository
+    }
+
+    func deleteOne(libraryId: Int64) async throws {
+        try await libraryService?.repository().deleteLibrary(libraryId: libraryId)
+        try await libraryPathRepository.deleteAllPaths(libraryId: libraryId)
+        try await libraryPathSearchRepository.deleteAllFTS(libraryId: libraryId)
+    }
+
     func listItems(libraryId: Int64, parentPathId: Int64?) async throws -> [LibraryPath] {
         logger.debug("attempting to list for libID : \(libraryId), parent: \(parentPathId ?? -1)")
         let all = try await libraryPathRepository.getByParentId(
@@ -686,17 +785,6 @@ actor DefaultLibraryImportService: LibraryImportService {
             }
         }
         return paths
-    }
-
-    private let libraryPathRepository: LibraryPathRepository
-    private let libraryPathSearchRepository: LibraryPathSearchRepository
-
-    init(
-        libraryPathRepository: LibraryPathRepository,
-        libraryPathSearchRepository: LibraryPathSearchRepository
-    ) {
-        self.libraryPathRepository = libraryPathRepository
-        self.libraryPathSearchRepository = libraryPathSearchRepository
     }
 
 }
@@ -734,7 +822,7 @@ actor DefaultLibrarySyncService: LibrarySyncService {
             let itemsToCreate = result?.allItems.map { x in
                 var parentPathId: Int64? = nil
                 if let parentPath = x.parentURL?.absoluteString {
-                  logger.debug("creating parent path: \(parentPath)")
+                    logger.debug("creating parent path: \(parentPath)")
                     parentPathId = hashStringToInt64(parentPath)
                 }
                 let pathId = hashStringToInt64(x.url.absoluteString)
@@ -839,7 +927,6 @@ actor DefaultLibrarySyncService: LibrarySyncService {
             defer { folderURL.stopAccessingSecurityScopedResource() }
 
             // Now we can scan the folder
-            // scanFolderRecursively(folderURL: folderURL)
             if let enumerator = FileManager.default.enumerator(
                 at: folderURL, includingPropertiesForKeys: [.isDirectoryKey],
                 options: [.skipsHiddenFiles, .skipsPackageDescendants])
@@ -851,11 +938,6 @@ actor DefaultLibrarySyncService: LibrarySyncService {
                         if resourceValues.isDirectory == false,  // file.pathExtension.lowercased() == "mp3"
                             audioExtensions.contains(file.pathExtension.lowercased())
                         {
-                            // Parse partial ID3
-                            // let (title, artist, album) = parseID3Tags(for: file)
-                            // let meta = SongMetadata(
-                            //     fileURL: file, title: title, artist: artist, album: album)
-                            // collectedSongs.append(meta)
                             let resultItem = LibrarySyncResultItem(
                                 rootURL: folderURL, current: file, isDirectory: false)
                             audioURLs.append(resultItem)
@@ -917,10 +999,11 @@ class DefaultLibraryService: LibraryService {
         if library.count == 0 {
             logger.debug("no library found, creating new one")
             // Create new library
-          
-          let pathId  = hashStringToInt64(URL(fileURLWithPath: path).absoluteString)
+
+            let pathId = hashStringToInt64(URL(fileURLWithPath: path).absoluteString)
             let lib = Library(
-              id: nil, dirPath: path, pathId: pathId, userId: userId, type: type, totalPaths: nil, syncError: nil,
+                id: nil, dirPath: path, pathId: pathId, userId: userId, type: type, totalPaths: nil,
+                syncError: nil,
                 isCurrent: true, createdAt: Date(), lastSyncedAt: nil, updatedAt: nil)
             let library = try await libraryRepo.create(library: lib)
             logger.debug("updating current switch")
@@ -965,9 +1048,11 @@ protocol LibraryPathRepository {
     func getByPath(relativePath: String, libraryId: Int64) async throws -> LibraryPath?
     func batchUpsert(paths: [LibraryPath]) async throws
     func deleteMany(libraryId: Int64, excludingRunId: Int64) async throws -> Int
+    func deleteAllPaths(libraryId: Int64) async throws
 }
 
 protocol LibraryRepository {
+    func deleteLibrary(libraryId: Int64) async throws
     func create(library: Library) async throws -> Library
     func findOneByUserId(userId: Int64, path: String?) async throws -> [Library]
     func getOne(id: Int64) async throws -> Library?
@@ -1167,6 +1252,12 @@ actor SQLiteLibraryRepository: LibraryRepository {
         self.colType = colType
     }
 
+    func deleteLibrary(libraryId: Int64) async throws {
+        let query = table.filter(colId == libraryId)
+        try db.run(query.delete())
+        logger.debug("Deleted library with ID: \(libraryId)")
+    }
+
     func getOne(id: Int64) async throws -> Library? {
         let query = table.filter(colId == id)
         if let row = try db.pluck(query) {
@@ -1326,6 +1417,12 @@ actor SQLiteLibraryPathRepository: LibraryPathRepository {
             )
         }
         return nil
+    }
+
+    func deleteAllPaths(libraryId: Int64) async throws {
+        let query = table.filter(colLibraryId == libraryId)
+        try db.run(query.delete())
+        logger.debug("Deleted all paths for library: \(libraryId)")
     }
 
     func getByParentId(libraryId: Int64, parentPathId: Int64?) async throws -> [LibraryPath] {
@@ -1567,6 +1664,14 @@ actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
         return results
     }
 
+    func deleteAllFTS(libraryId: Int64) async throws {
+        let query = ftsTable.filter(colFtsLibraryId == libraryId)
+        try db.run(query.delete())
+        logger.debug("Deleted all FTS entries for library: \(libraryId)")
+    }
+
+    private let logger = Logger(subsystem: subsystem, category: "LibraryPathSearchRepository")
+
     // MARK: - Batch Delete by libraryId, excluding runId
     func batchDeleteFTS(libraryId: Int64, excludingRunId: Int64) async throws {
         // Delete all rows with this libraryId where runId != excludingRunId
@@ -1640,7 +1745,6 @@ actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
 }
 
 actor SQLiteSongRepository: SongRepository {
-
     private let db: Connection
 
     // MARK: - Main "songs" table
@@ -1720,6 +1824,24 @@ actor SQLiteSongRepository: SongRepository {
                 tokenize='unicode61'
             );
             """)
+    }
+
+    func getSongs(ids: [Int64]) async -> [Song] {
+        let query = songsTable.filter(ids.contains(colId))
+        return try! db.prepare(query).map { row in
+            Song(
+                id: row[colId],
+                songKey: row[colSongKey],
+                artist: row[colArtist],
+                title: row[colTitle],
+                album: row[colAlbum],
+                trackNumber: row[colTrackNumber],
+                coverArtPath: row[colCoverArtPath],
+                bookmark: (row[colBookmark]?.bytes).map { Data($0) },
+                createdAt: Date(timeIntervalSince1970: row[colCreatedAt]),
+                updatedAt: row[colUpdatedAt].map(Date.init(timeIntervalSince1970:))
+            )
+        }
     }
 
     func totalSongCount(query: String) async throws -> Int {
@@ -1860,7 +1982,11 @@ actor SQLiteSongRepository: SongRepository {
             let artist = (row[2] as? String) ?? ""
             let title = (row[3] as? String) ?? ""
             let album = (row[4] as? String) ?? ""
-            let trackNumber = (row[5] as? Int)
+            var trackNumber: Int? = nil
+            if let t = (row[5] as? Int64) {
+                trackNumber = Int(t)
+            }
+
             let coverArtPath = row[6] as? String
             let bookmarkBlob = row[7] as? Blob
             let bookmarkData = bookmarkBlob.map { Data($0.bytes) }
@@ -1885,22 +2011,37 @@ actor SQLiteSongRepository: SongRepository {
         }
         return results
     }
+
     func getAllArtists() async throws -> [String] {
-        let query = songsTable.select(colArtist).group(colArtist)
+        let query = songsTable.select(colArtist)
+            .filter(colArtist != "")
+            .group(colArtist)
         return try db.prepare(query).compactMap { $0[colArtist] }
+
     }
 
     func getAllAlbums() async throws -> [Album] {
-        let query = songsTable.select(colAlbum, colArtist, colCoverArtPath)
-            .group(colAlbum)
+        let query = """
+                SELECT album, artist, coverArtPath
+                FROM songs AS s1
+                WHERE album != ''
+                  AND LENGTH(artist) = (
+                    SELECT MIN(LENGTH(artist))
+                    FROM songs AS s2
+                    WHERE s2.album = s1.album
+                )
+                GROUP BY album
+                ORDER BY album;
+            """
 
         var albums = [Album]()
         for row in try db.prepare(query) {
-            let albumName = row[colAlbum]
-            let artist = row[colArtist]
-            let coverPath = row[colCoverArtPath]
+            let albumName = row[0] as? String ?? ""
+            let artist = row[1] as? String ?? ""
+            let coverPath = row[2] as? String
             albums.append(Album(name: albumName, artist: artist, coverArtPath: coverPath))
         }
+
         return albums
     }
 

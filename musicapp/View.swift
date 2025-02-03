@@ -52,40 +52,60 @@ struct SearchBar: View {
     }
 }
 
+class TabState: ObservableObject {
+    @Published var selectedTab: Int = 0
+}
+
 struct MainTabView: View {
+    @StateObject private var tabState = TabState()
+    @State private var isPlayerPresented = false
+
     private let app: AppDependencies?
     init(app: AppDependencies?) {
         self.app = app
     }
     var body: some View {
-        TabView {
-            if let songRepo = app?.songRepository {
-                LibraryView(songRepo: songRepo).tabItem {
-                    Label("Library", systemImage: "books.vertical")
+        ZStack(alignment: .bottom) {
+            TabView(selection: $tabState.selectedTab) {
+                if let songRepo = app?.songRepository {
+                    LibraryView(songRepo: songRepo).tabItem {
+                        Label("Library", systemImage: "books.vertical")
+                    }.tag(0)
                 }
-            }
 
+                PlayerView()
+                    .tabItem {
+                        Label("Player", systemImage: "play.circle")
+                    }.tag(1)
+
+                VStack {
+                    SyncView(
+                        userCloudService: app?.userCloudService,
+                        icloudProvider: app?.icloudProvider,
+                        libraryService: app?.libraryService,
+                        songImportService: app?.songImportService)
+                }.tabItem {
+                    Label("Sync", systemImage: "icloud.and.arrow.down")
+                }.tag(2)
+            }
+            .environmentObject(tabState)
+            .accentColor(.orange)
+
+            MiniPlayerView {
+                isPlayerPresented = true
+            }
+            .padding(.bottom, 60)  // Adjust based on your tab bar height
+        }
+        .fullScreenCover(isPresented: $isPlayerPresented) {
             PlayerView()
-                .tabItem {
-                    Label("Player", systemImage: "play.circle")
-                }
-
-            VStack {
-                SyncView(
-                    userCloudService: app?.userCloudService,
-                    icloudProvider: app?.icloudProvider,
-                    libraryService: app?.libraryService,
-                    songImportService: app?.songImportService)
-            }.tabItem {
-                Label("Sync", systemImage: "icloud.and.arrow.down")
-            }
-        }.accentColor(.orange)
+        }
     }
 }
 
 // MARK: - SongRow View
 struct SongRow: View {
-    @ObservedObject private var playerVM = PlayerViewModel.shared  // NEW: Observe the shared PlayerViewModel here
+    @ObservedObject private var playerVM = PlayerViewModel.shared
+
     let song: Song
     let onPlay: () -> Void
 
@@ -134,11 +154,18 @@ class SongListViewModel: ObservableObject {
     private var currentQuery: String = ""
 
     private let logger = Logger(
-        subsystem: "com.snowbear.musicapp", category: "SongListViewModel")
+        subsystem: "com.snowbear.musicapp",
+        category: "SongListViewModel")
 
     init(songRepo: SongRepository, filter: Filter) {
         self.songRepo = songRepo
         self.filter = filter
+    }
+
+    private func reset() {
+        currentPage = 0
+        songs = []
+        hasMorePages = true
     }
 
     private func loadFilteredSongs() async throws -> [Song] {
@@ -160,18 +187,43 @@ class SongListViewModel: ObservableObject {
                 offset: currentPage * pageSize
             )
 
-        case .album(let album, let artist):
-            var albumFilter = "album:\"\(album)\""
-            if let artist = artist {
-                albumFilter += " artist:\"\(artist)\""
+        case .album(let album, _):
+            let albumFilter = "album:\"\(album)\""
+            let artistFilter = ""
+
+            let combinedQuery: String
+            if currentQuery.isEmpty {
+                combinedQuery = [albumFilter, artistFilter].filter { !$0.isEmpty }.joined(
+                    separator: " ")
+            } else {
+                combinedQuery = "\(currentQuery) \(albumFilter) \(artistFilter)"
             }
-            let combinedQuery =
-                currentQuery.isEmpty ? albumFilter : "\(currentQuery) \(albumFilter)"
-            return try await songRepo.searchSongsFTS(
-                query: combinedQuery,
+
+            let cleanedQuery =
+                combinedQuery
+                .components(separatedBy: .whitespaces)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+
+            logger.debug("Album query: \(cleanedQuery)")
+
+            var results = try await songRepo.searchSongsFTS(
+                query: cleanedQuery,
                 limit: pageSize,
                 offset: currentPage * pageSize
             )
+
+            if !results.isEmpty {
+                results.sort {
+                    if $0.trackNumber == $1.trackNumber {
+                        return $0.artist.count < $1.artist.count
+                    }
+                    return ($0.trackNumber ?? Int.max) < ($1.trackNumber ?? Int.max)
+                }
+            }
+            logger.debug("Returning \(results.count) songs for album \(album)")
+            return results
+
         }
     }
 
@@ -192,13 +244,20 @@ class SongListViewModel: ObservableObject {
         }
     }
 
-    // NEW: Modified loadMoreSongs to sort album songs if filter is album
     func loadMoreSongs() async {
         guard !isLoadingPage && hasMorePages else { return }
         isLoadingPage = true
+        defer { isLoadingPage = false }  // NEW: Ensure we always reset loading state
+
         do {
             let newSongs = try await loadFilteredSongs()
+            let received = newSongs.count
+
+            // NEW: More accurate hasMorePages calculation
+            hasMorePages = received >= pageSize
+
             if case .album = filter {
+                logger.debug("need to load \(newSongs.count) songs and sort them")
                 songs.append(contentsOf: newSongs)
                 songs.sort { (s1, s2) in
                     if let t1 = s1.trackNumber, let t2 = s2.trackNumber {
@@ -209,22 +268,21 @@ class SongListViewModel: ObservableObject {
             } else {
                 songs.append(contentsOf: newSongs)
             }
-            if newSongs.count < pageSize { hasMorePages = false }
-            currentPage += 1
-            logger.debug("Loaded page \(self.currentPage) with \(newSongs.count) songs")
+
+            if received > 0 {
+                currentPage += 1
+            }
         } catch {
             logger.error("Error loading more songs: \(error.localizedDescription)")
+            hasMorePages = false
         }
-        isLoadingPage = false
     }
 
-    // NEW: Modified searchSongs to sort album songs if filter is album
     func searchSongs(query: String) async {
         currentQuery = query
-        currentPage = 0
-        songs = []
-        hasMorePages = true
+        reset()  // NEW: Use reset instead of manual reset
         await loadTotalSongs()
+
         do {
             let newSongs = try await loadFilteredSongs()
             if case .album = filter {
@@ -242,17 +300,14 @@ class SongListViewModel: ObservableObject {
             } else {
                 currentPage = 1
             }
+            hasMorePages = newSongs.count >= pageSize
         } catch {
             logger.error("Search error: \(error.localizedDescription)")
         }
     }
 
-    // NEW: Updated loadInitialSongs to sort album songs if filter is album
     func loadInitialSongs() async {
-        currentPage = 0
-        songs = []
-        hasMorePages = true
-        currentQuery = ""
+        reset()
         do {
             let initialSongs = try await loadFilteredSongs()
             if case .album = filter {
@@ -269,18 +324,22 @@ class SongListViewModel: ObservableObject {
                 hasMorePages = true
                 currentPage = 1
             }
+            hasMorePages = initialSongs.count >= pageSize
             await loadTotalSongs()
         } catch {
             logger.error("Initial load error: \(error.localizedDescription)")
+            hasMorePages = false
         }
     }
 }
 
 // MARK: - Updated SongListView with Player Integration & Persistent Search
 struct SongListView: View {
+    @EnvironmentObject private var tabState: TabState
     @ObservedObject private var viewModel: SongListViewModel
     @State private var searchText: String = ""
     @State private var isPlayerPresented: Bool = false
+
     private let logger = Logger(subsystem: subsystem, category: "SongListView")
 
     init(viewModel: SongListViewModel) {
@@ -333,15 +392,6 @@ struct SongListView: View {
                 }
                 .listStyle(PlainListStyle())
             }
-
-            // Mini player at the bottom triggers full-screen player
-            MiniPlayerView {
-                isPlayerPresented = true
-            }
-
-        }
-        .fullScreenCover(isPresented: $isPlayerPresented) {
-            PlayerView()
         }
         .onAppear {
             Task {
@@ -372,16 +422,8 @@ struct SongListView: View {
             .foregroundColor(.secondary)
 
             if searchText.isEmpty {
-                NavigationLink {
-                    SyncView(
-                        userCloudService: nil,
-                        icloudProvider: nil,
-                        libraryService: nil,
-                        songImportService: nil
-                    )
-                } label: {
-                    Text("Add Library")
-                        .padding(.horizontal, 20)
+                Button("Add Library") {
+                    tabState.selectedTab = 2
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -448,7 +490,7 @@ func coverArt(of song: Song) -> UIImage? {
 
 @MainActor
 class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayerDelegate {
-    static let shared = PlayerViewModel()
+    static var shared = PlayerViewModel()
 
     @Published var currentSong: Song?
     @Published var isPlaying = false
@@ -456,17 +498,61 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     @Published var currentTime: String = "0:00"
     @Published var duration: String = "0:00"
 
+    private let playerPersistenceService: PlayerPersistenceService?
+
+    @Published var volume: Float = 1.0 {
+        didSet {
+            player?.volume = volume
+            Task {
+                await playerPersistenceService?.savePlaybackState(
+                    volume: volume, currentIndex: currentIndex, songs: songs)
+            }
+        }
+    }
+
+    init(playerPersistenceService: PlayerPersistenceService? = nil) {
+        self.playerPersistenceService = playerPersistenceService
+        super.init()
+        setupAudioSession()
+        setupRemoteCommands()
+        setupInterruptionObserver()
+
+        Task {
+            if let (songs, currentIndex, currentSong) = await self.playerPersistenceService?
+                .restore()
+            {
+                self.songs = songs
+                self.currentIndex = currentIndex
+                self.currentSong = currentSong
+
+                if let currentSong = currentSong {
+                    stopAndPreloadSong(currentSong)
+                }
+            }
+
+            if let volume = await self.playerPersistenceService?.getVolume() {
+                self.volume = volume
+            }
+        }
+    }
+
     private var player: AVAudioPlayer?
     private var timer: Timer?
     private var songs: [Song] = []
     private var currentIndex: Int = 0
+
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         nextSong()
     }
+
     func configureQueue(songs: [Song], startIndex: Int) {
         self.songs = songs
         self.currentIndex = startIndex
         self.currentSong = songs[safe: startIndex]
+        Task {
+            await self.playerPersistenceService?.savePlaybackState(
+                volume: self.volume, currentIndex: self.currentIndex, songs: self.songs)
+        }
     }
 
     var logger = Logger(subsystem: subsystem, category: "PlayerViewModel")
@@ -561,14 +647,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         }
     }
 
-    private override init() {
-        super.init()
-        setupAudioSession()
-        setupRemoteCommands()
-        setupInterruptionObserver()
-    }
-
-    func playSong(_ song: Song) {
+    private func stopAndPreloadSong(_ song: Song) {
         stop()
 
         guard let url = resolveSongURL(song),
@@ -582,6 +661,10 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         currentSong = song
         player?.delegate = self
         updateTimeDisplay()
+    }
+
+    func playSong(_ song: Song) {
+        stopAndPreloadSong(song)
 
         play()
         updateNowPlayingInfo()
@@ -620,12 +703,20 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         guard !songs.isEmpty else { return }
         currentIndex = (currentIndex - 1 + songs.count) % songs.count
         playSong(songs[currentIndex])
+        Task {
+            await self.playerPersistenceService?.savePlaybackState(
+                volume: self.volume, currentIndex: self.currentIndex, songs: self.songs)
+        }
     }
 
     func nextSong() {
         guard !songs.isEmpty else { return }
         currentIndex = (currentIndex + 1) % songs.count
         playSong(songs[currentIndex])
+        Task {
+            await self.playerPersistenceService?.savePlaybackState(
+                volume: self.volume, currentIndex: self.currentIndex, songs: self.songs)
+        }
     }
 
     func seek(to progress: Double) {
@@ -688,6 +779,8 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 struct PlayerView: View {
     @StateObject private var vm = PlayerViewModel.shared
 
+    @State private var editingProgress: Double?
+
     var body: some View {
         VStack(spacing: 20) {
             if let song = vm.currentSong {
@@ -729,7 +822,38 @@ struct PlayerView: View {
             }
         }
     }
-    @State private var editingProgress: Double?
+
+    private func controlsView() -> some View {
+        VStack {
+            // NEW: Volume control
+            HStack {
+                Image(systemName: "speaker.fill")
+                Slider(value: $vm.volume, in: 0...1)
+                Image(systemName: "speaker.wave.3.fill")
+            }
+            .padding(.horizontal)
+
+            HStack(spacing: 40) {
+                Button(action: vm.previousSong) {
+                    Image(systemName: "backward.fill")
+                        .font(.title)
+                }
+
+                Button(action: vm.playPause) {
+                    Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 40))
+                        .frame(width: 60, height: 60)
+                }
+
+                Button(action: vm.nextSong) {
+                    Image(systemName: "forward.fill")
+                        .font(.title)
+                }
+            }
+            .foregroundColor(.primary)
+        }
+    }
+
     private func progressView() -> some View {
         VStack {
             Slider(
@@ -759,26 +883,8 @@ struct PlayerView: View {
         }
     }
 
-    private func controlsView() -> some View {
-        HStack(spacing: 40) {
-            Button(action: vm.previousSong) {
-                Image(systemName: "backward.fill")
-                    .font(.title)
-            }
-
-            Button(action: vm.playPause) {
-                Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 40))
-                    .frame(width: 60, height: 60)
-            }
-
-            Button(action: vm.nextSong) {
-                Image(systemName: "forward.fill")
-                    .font(.title)
-            }
-        }
-        .foregroundColor(.primary)
-    }
+    // private func controlsView() -> some View {
+    // }
 
     private func emptyStateView() -> some View {
         VStack {
@@ -1902,6 +2008,7 @@ struct musicappApp: App {
             switch app {
             case .success(let app):
                 MainTabView(app: app)
+                    .environmentObject(TabState())
             case .failure(let err):
                 Text("Failed to initialize the app: \(err.localizedDescription)")
                     .foregroundColor(.red)
@@ -1913,7 +2020,7 @@ struct musicappApp: App {
 
     private func setupApp() -> Swift.Result<AppDependencies, CustomError> {
         do {
-            let schemaVersion = 16
+            let schemaVersion = 20
             let db = setupSQLiteConnection(dbName: "musicapp\(schemaVersion).sqlite")
             let userRepo = try SQLiteUserRepository(db: db!)
             let userService = DefaultUserService(userRepository: userRepo)
@@ -1937,18 +2044,24 @@ struct musicappApp: App {
             let libraryService = DefaultLibraryService(
                 libraryRepo: libraryRepo, librarySyncService: librarySyncService,
                 libraryImportService: libraryImportService)
+            let playerPersistenceService: PlayerPersistenceService =
+                DefaultPlayerPersistenceService(
+                    songRepo: songRepository)
+
+            PlayerViewModel.shared = PlayerViewModel(
+                playerPersistenceService: playerPersistenceService)
             let app = AppDependencies(
                 userService: userService,
                 userCloudService: userCloudService,
                 icloudProvider: icloudProvider,
                 libraryService: libraryService,
                 songRepository: songRepository,
-                songImportService: songImportService)
+                songImportService: songImportService,
+                playerPersistenceService: playerPersistenceService)
 
             return .success(app)
         } catch {
             return .failure(.genericError(error.localizedDescription))
         }
-
     }
 }
