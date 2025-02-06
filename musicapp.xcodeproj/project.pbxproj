@@ -46,6 +46,11 @@
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		10512A332D55715D004793A5 /* fonts */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = fonts;
+			sourceTree = "<group>";
+		};
 		10811E712D31CF01008CAD75 /* musicapp */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
@@ -98,6 +103,7 @@
 		10811E662D31CF01008CAD75 = {
 			isa = PBXGroup;
 			children = (
+				10512A332D55715D004793A5 /* fonts */,
 				1035973D2D3457B100456EB8 /* musicapp.xctestplan */,
 				10811E712D31CF01008CAD75 /* musicapp */,
 				10811E822D31CF02008CAD75 /* musicappTests */,
@@ -133,6 +139,7 @@
 				103CBBE62D331C9000F3CEDF /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
+				10512A332D55715D004793A5 /* fonts */,
 				10811E712D31CF01008CAD75 /* musicapp */,
 			);
 			name = musicapp;

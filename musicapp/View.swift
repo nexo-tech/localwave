@@ -81,7 +81,7 @@ struct MainTabView: View {
                 }.tag(2)
             }
             .environmentObject(tabState)
-            .accentColor(.orange)
+            .accentColor(.cyan)
 
             MiniPlayerView {
                 isPlayerPresented = true
@@ -426,51 +426,15 @@ struct SongListView: View {
     }
 }
 
+
 struct MiniPlayerView: View {
     @EnvironmentObject private var playerVM: PlayerViewModel  // NEW: Use EnvironmentObject
     var onTap: () -> Void
 
     var body: some View {
-        if playerVM.currentSong != nil {
-            Button(action: {
-                onTap()
-            }) {
-                HStack {
-                    if let song = playerVM.currentSong, let cover = coverArt(of: song) {
-                        Image(uiImage: cover)
-                            .resizable()
-                            .frame(width: 50, height: 50)
-                            .cornerRadius(5)
-                    } else {
-                        Image(systemName: "music.note")
-                            .resizable()
-                            .frame(width: 50, height: 50)
-                            .cornerRadius(5)
-                    }
-
-                    VStack(alignment: .leading) {
-                        Text(playerVM.currentSong?.title ?? "No Song")
-                            .font(.headline)
-                        Text(
-                            "\(playerVM.currentSong?.artist ?? "Unknown") - \(playerVM.currentSong?.album ?? "")"
-                        )
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    Button(action: {
-                        playerVM.playPause()
-                    }) {
-                        Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.title)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-                .padding()
-                .background(Color(UIColor.secondarySystemBackground))
-            }
-            .buttonStyle(PlainButtonStyle())
-        }
+        MiniPlayerViewInner(
+            currentSong: playerVM.currentSong,
+            onTap: onTap, playPauseAction: { playerVM.playPause() }, isPlaying: playerVM.isPlaying)
     }
 }
 
@@ -1990,6 +1954,25 @@ struct ErrorView: View {
     }
 }
 
+func Oxanium(_ size: CGFloat = 16) -> Font {
+  return Font.custom("Oxanium", size: size)
+}
+
+struct ThemeProvider: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            // .environment(\.font, .system(size: 18, weight: .medium))  // Global font
+        .font(Oxanium())
+            .preferredColorScheme(.dark)  // Force dark mode
+    }
+}
+
+extension View {
+    func applyTheme() -> some View {
+        self.modifier(ThemeProvider())
+    }
+}
+
 @main
 struct musicappApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -2013,6 +1996,10 @@ struct musicappApp: App {
                 .environmentObject(tabState)
                 .environmentObject(dependencies)
                 .environmentObject(playerVM)
+                // .font(Font.custom("Oxanium-VariableFont_wght.ttf", size: 18))
+                .applyTheme()
         }
+//        .defaultSize(width: 600, height: 600) // Default window size
+
     }
 }
