@@ -160,8 +160,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "229"
             endingLineNumber = "229"
-            landmarkName = "LibrarySyncResultItem"
-            landmarkType = "14">
+            landmarkName = "init(rootURL:current:isDirectory:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -176,8 +176,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "267"
             endingLineNumber = "267"
-            landmarkName = "LibraryPathSearchRepository"
-            landmarkType = "5">
+            landmarkName = "syncDir(libraryId:folderURL:onCurrentURL:onSetLoading:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -364,8 +364,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "265"
             endingLineNumber = "265"
-            landmarkName = "LibraryPathSearchRepository"
-            landmarkType = "5">
+            landmarkName = "syncDir(libraryId:folderURL:onCurrentURL:onSetLoading:)"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -380,7 +380,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "220"
             endingLineNumber = "220"
-            landmarkName = "LibrarySyncResult"
+            landmarkName = "LibrarySyncResultItem"
             landmarkType = "14">
          </BreakpointContent>
       </BreakpointProxy>
@@ -396,8 +396,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "332"
             endingLineNumber = "332"
-            landmarkName = "ImageFormat"
-            landmarkType = "13">
+            landmarkName = "cancelImport()"
+            landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -428,8 +428,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "142"
             endingLineNumber = "142"
-            landmarkName = "Filter"
-            landmarkType = "13">
+            landmarkName = "SongListViewModel"
+            landmarkType = "3">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -444,8 +444,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "143"
             endingLineNumber = "143"
-            landmarkName = "Filter"
-            landmarkType = "13">
+            landmarkName = "SongListViewModel"
+            landmarkType = "3">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -556,7 +556,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "525"
             endingLineNumber = "525"
-            landmarkName = "resolveFileURL(for:)"
+            landmarkName = "resolveURLFromLibrary(_:relativePath:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -620,7 +620,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "554"
             endingLineNumber = "554"
-            landmarkName = "resolveURLFromLibrary(_:relativePath:)"
+            landmarkName = "createBookmark(for:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -682,8 +682,8 @@
             filePath = "musicapp/App.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "1876"
-            endingLineNumber = "1876"
+            startingLineNumber = "1877"
+            endingLineNumber = "1877"
             landmarkName = "upsertSong(_:)"
             landmarkType = "7">
          </BreakpointContent>
@@ -698,10 +698,42 @@
             filePath = "musicapp/App.swift"
             startingColumnNumber = "9223372036854775807"
             endingColumnNumber = "9223372036854775807"
-            startingLineNumber = "1885"
-            endingLineNumber = "1885"
+            startingLineNumber = "1886"
+            endingLineNumber = "1886"
             landmarkName = "upsertSong(_:)"
             landmarkType = "7">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "932A76F8-EF6F-4102-9E2B-F52DCB5E10F4"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "musicapp/View.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "72"
+            endingLineNumber = "72"
+            landmarkName = "body"
+            landmarkType = "24">
+         </BreakpointContent>
+      </BreakpointProxy>
+      <BreakpointProxy
+         BreakpointExtensionID = "Xcode.Breakpoint.FileBreakpoint">
+         <BreakpointContent
+            uuid = "9142B09E-B890-4745-8C24-EE889FF79EC8"
+            shouldBeEnabled = "No"
+            ignoreCount = "0"
+            continueAfterRunningActions = "No"
+            filePath = "musicapp/View.swift"
+            startingColumnNumber = "9223372036854775807"
+            endingColumnNumber = "9223372036854775807"
+            startingLineNumber = "75"
+            endingLineNumber = "75"
+            landmarkName = "body"
+            landmarkType = "24">
          </BreakpointContent>
       </BreakpointProxy>
    </Breakpoints>

@@ -160,16 +160,6 @@ func hashStringToInt64(_ str: String) -> Int64 {
     return Int64(bitPattern: hash & 0x7FFF_FFFF_FFFF_FFFF)
 }
 
-struct AppDependencies {
-    let userService: UserService
-    let userCloudService: UserCloudService
-    let icloudProvider: ICloudProvider
-    let libraryService: LibraryService
-    let songRepository: SongRepository
-    let songImportService: SongImportService
-    let playerPersistenceService: PlayerPersistenceService
-}
-
 protocol PlayerPersistenceService {
     func getVolume() async -> Float
     func restore() async -> ([Song], Int, Song?)?
@@ -739,6 +729,7 @@ func preprocessFTSQuery(_ input: String) -> String {
 actor DefaultLibraryImportService: LibraryImportService {
     let logger = Logger(subsystem: subsystem, category: "LibraryImportService")
 
+    private let libraryRepository: LibraryRepository
     private let libraryPathRepository: LibraryPathRepository
     private let libraryPathSearchRepository: LibraryPathSearchRepository
 
@@ -753,7 +744,7 @@ actor DefaultLibraryImportService: LibraryImportService {
     }
 
     func deleteOne(libraryId: Int64) async throws {
-        try await libraryService?.repository().deleteLibrary(libraryId: libraryId)
+        try await libraryRepository.deleteLibrary(libraryId: libraryId)
         try await libraryPathRepository.deleteAllPaths(libraryId: libraryId)
         try await libraryPathSearchRepository.deleteAllFTS(libraryId: libraryId)
     }
@@ -2076,5 +2067,76 @@ actor SQLiteSongRepository: SongRepository {
                 updatedAt: row[colUpdatedAt].map(Date.init(timeIntervalSince1970:))
             )
         }
+    }
+}
+
+@MainActor
+class DependencyContainer: ObservableObject {
+    let userService: UserService
+    let userCloudService: UserCloudService
+    let icloudProvider: ICloudProvider
+    let libraryService: LibraryService
+    let songRepository: SongRepository
+    let songImportService: SongImportService
+    let playerPersistenceService: PlayerPersistenceService
+
+    init() throws {
+        let schemaVersion = 20
+        guard let db = setupSQLiteConnection(dbName: "musicApp\(schemaVersion).sqlite") else {
+            throw CustomError.genericError("database initialisation failed")
+        }
+
+        let userRepo = try SQLiteUserRepository(db: db)
+        let libraryRepo = try SQLiteLibraryRepository(db: db)
+        let libraryPathRepo = try SQLiteLibraryPathRepository(db: db)
+        let libraryPathSearchRepository = try SQLiteLibraryPathSearchRepository(db: db)
+        let songRepo = try SQLiteSongRepository(db: db)
+
+        self.userService = DefaultUserService(userRepository: userRepo)
+        self.icloudProvider = DefaultICloudProvider()
+        self.userCloudService = DefaultUserCloudService(
+            userService: userService,
+            iCloudProvider: icloudProvider)
+
+        let librarySyncService = DefaultLibrarySyncService(
+            libraryRepository: libraryRepo,
+            libraryPathSearchRepository: libraryPathSearchRepository,
+            libraryPathRepository: libraryPathRepo)
+
+        let libraryImportService = DefaultLibraryImportService(
+            libraryRepository: libraryRepo,
+            libraryPathRepository: libraryPathRepo,
+            libraryPathSearchRepository: libraryPathSearchRepository)
+        self.libraryService = DefaultLibraryService(
+            libraryRepo: libraryRepo,
+            librarySyncService: librarySyncService,
+            libraryImportService: libraryImportService)
+        self.songRepository = songRepo
+        self.songImportService = DefaultSongImportService(
+            songRepo: songRepo,
+            libraryPathRepo: libraryPathRepo,
+            libraryRepo: libraryRepo)
+        self.playerPersistenceService = DefaultPlayerPersistenceService(songRepo: songRepo)
+    }
+
+    func makeSongListViewModel(filter: SongListViewModel.Filter) -> SongListViewModel {
+        SongListViewModel(songRepo: songRepository, filter: filter)
+    }
+
+    func makeArtistListViewModel() -> ArtistListViewModel {
+        ArtistListViewModel(songRepo: songRepository)
+    }
+
+    func makeAlbumListViewModel() -> AlbumListViewModel {
+        AlbumListViewModel(songRepo: songRepository)
+    }
+
+    func makeSyncViewModel() -> SyncViewModel {
+        SyncViewModel(
+            userCloudService: userCloudService,
+            icloudProvider: icloudProvider,
+            libraryService: libraryService,
+            songImportService: songImportService
+        )
     }
 }

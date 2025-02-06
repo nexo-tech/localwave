@@ -57,33 +57,25 @@ class TabState: ObservableObject {
 }
 
 struct MainTabView: View {
-    @StateObject private var tabState = TabState()
+    @EnvironmentObject private var dependencies: DependencyContainer
+    @EnvironmentObject private var tabState: TabState
+    @EnvironmentObject private var playerVM: PlayerViewModel
     @State private var isPlayerPresented = false
 
-    private let app: AppDependencies?
-    init(app: AppDependencies?) {
-        self.app = app
-    }
     var body: some View {
         ZStack(alignment: .bottom) {
             TabView(selection: $tabState.selectedTab) {
-                if let songRepo = app?.songRepository {
-                    LibraryView(songRepo: songRepo).tabItem {
-                        Label("Library", systemImage: "books.vertical")
-                    }.tag(0)
-                }
+                LibraryView(dependencies: dependencies).tabItem {
+                    Label("Library", systemImage: "books.vertical")
+                }.tag(0)
 
                 PlayerView()
                     .tabItem {
                         Label("Player", systemImage: "play.circle")
-                    }.tag(1)
+                    }.environmentObject(playerVM).tag(1)
 
                 VStack {
-                    SyncView(
-                        userCloudService: app?.userCloudService,
-                        icloudProvider: app?.icloudProvider,
-                        libraryService: app?.libraryService,
-                        songImportService: app?.songImportService)
+                    SyncView(dependencies: dependencies)
                 }.tabItem {
                     Label("Sync", systemImage: "icloud.and.arrow.down")
                 }.tag(2)
@@ -97,14 +89,14 @@ struct MainTabView: View {
             .padding(.bottom, 60)  // Adjust based on your tab bar height
         }
         .fullScreenCover(isPresented: $isPlayerPresented) {
-            PlayerView()
+            PlayerView().environmentObject(playerVM)
         }
     }
 }
 
 // MARK: - SongRow View
 struct SongRow: View {
-    @ObservedObject private var playerVM = PlayerViewModel.shared
+    @EnvironmentObject private var playerVM: PlayerViewModel
 
     let song: Song
     let onPlay: () -> Void
@@ -339,6 +331,7 @@ struct SongListView: View {
     @ObservedObject private var viewModel: SongListViewModel
     @State private var searchText: String = ""
     @State private var isPlayerPresented: Bool = false
+    @EnvironmentObject private var playerVM: PlayerViewModel
 
     private let logger = Logger(subsystem: subsystem, category: "SongListView")
 
@@ -373,9 +366,9 @@ struct SongListView: View {
                             song: song,
                             onPlay: {
                                 // Populate the player queue and play the tapped song
-                                PlayerViewModel.shared.configureQueue(
+                                playerVM.configureQueue(
                                     songs: viewModel.songs, startIndex: index)
-                                PlayerViewModel.shared.playSong(song)
+                                playerVM.playSong(song)
                             }
                         )
                         .onAppear {
@@ -434,7 +427,7 @@ struct SongListView: View {
 }
 
 struct MiniPlayerView: View {
-    @ObservedObject var playerVM: PlayerViewModel = PlayerViewModel.shared
+    @EnvironmentObject private var playerVM: PlayerViewModel  // NEW: Use EnvironmentObject
     var onTap: () -> Void
 
     var body: some View {
@@ -490,13 +483,19 @@ func coverArt(of song: Song) -> UIImage? {
 
 @MainActor
 class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayerDelegate {
-    static var shared = PlayerViewModel()
-
     @Published var currentSong: Song?
     @Published var isPlaying = false
     @Published var playbackProgress: Double = 0
     @Published var currentTime: String = "0:00"
     @Published var duration: String = "0:00"
+
+    init(playerPersistenceService: PlayerPersistenceService) {
+        self.playerPersistenceService = playerPersistenceService
+        super.init()
+        setupAudioSession()
+        setupRemoteCommands()
+        setupInterruptionObserver()
+    }
 
     private let playerPersistenceService: PlayerPersistenceService?
 
@@ -777,13 +776,12 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 }
 
 struct PlayerView: View {
-    @StateObject private var vm = PlayerViewModel.shared
-
+    @EnvironmentObject private var playerVM: PlayerViewModel  // NEW: Use EnvironmentObject
     @State private var editingProgress: Double?
 
     var body: some View {
         VStack(spacing: 20) {
-            if let song = vm.currentSong {
+            if let song = playerVM.currentSong {
                 songInfoView(song: song)
                 progressView()
                 controlsView()
@@ -793,12 +791,12 @@ struct PlayerView: View {
         }
         .padding()
         .onAppear {
-            vm.updateNowPlayingInfo()
+            playerVM.updateNowPlayingInfo()
         }
         .onReceive(
             NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)
         ) { _ in
-            vm.updateNowPlayingInfo()
+            playerVM.updateNowPlayingInfo()
         }
     }
 
@@ -828,24 +826,24 @@ struct PlayerView: View {
             // NEW: Volume control
             HStack {
                 Image(systemName: "speaker.fill")
-                Slider(value: $vm.volume, in: 0...1)
+                Slider(value: $playerVM.volume, in: 0...1)
                 Image(systemName: "speaker.wave.3.fill")
             }
             .padding(.horizontal)
 
             HStack(spacing: 40) {
-                Button(action: vm.previousSong) {
+                Button(action: playerVM.previousSong) {
                     Image(systemName: "backward.fill")
                         .font(.title)
                 }
 
-                Button(action: vm.playPause) {
-                    Image(systemName: vm.isPlaying ? "pause.fill" : "play.fill")
+                Button(action: playerVM.playPause) {
+                    Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 40))
                         .frame(width: 60, height: 60)
                 }
 
-                Button(action: vm.nextSong) {
+                Button(action: playerVM.nextSong) {
                     Image(systemName: "forward.fill")
                         .font(.title)
                 }
@@ -858,7 +856,7 @@ struct PlayerView: View {
         VStack {
             Slider(
                 value: Binding(
-                    get: { editingProgress ?? vm.playbackProgress },
+                    get: { editingProgress ?? playerVM.playbackProgress },
                     set: { newValue in
                         editingProgress = newValue
                     }
@@ -866,7 +864,7 @@ struct PlayerView: View {
                 in: 0...1,
                 onEditingChanged: { editing in
                     if !editing, let progress = editingProgress {
-                        vm.seek(to: progress)
+                        playerVM.seek(to: progress)
                     }
                     editingProgress = nil  // Clear temporary value
                 }
@@ -874,17 +872,14 @@ struct PlayerView: View {
             .accentColor(.purple)
 
             HStack {
-                Text(vm.currentTime)
+                Text(playerVM.currentTime)
                 Spacer()
-                Text(vm.duration)
+                Text(playerVM.duration)
             }
             .font(.caption)
             .foregroundColor(.secondary)
         }
     }
-
-    // private func controlsView() -> some View {
-    // }
 
     private func emptyStateView() -> some View {
         VStack {
@@ -936,8 +931,8 @@ struct ArtistListView: View {
     @ObservedObject var viewModel: ArtistListViewModel
     private let songRepo: SongRepository
 
-    init(songRepo: SongRepository, viewModel: ArtistListViewModel) {
-        self.songRepo = songRepo
+    init(dependencies: DependencyContainer, viewModel: ArtistListViewModel) {
+        self.songRepo = dependencies.songRepository
         self.viewModel = viewModel
     }
 
@@ -1036,9 +1031,9 @@ struct AlbumGridView: View {
     private let columns = [GridItem(.adaptive(minimum: 160))]
     private let songRepo: SongRepository
 
-    init(songRepo: SongRepository, viewModel: AlbumListViewModel) {
-        self.songRepo = songRepo
+    init(dependencies: DependencyContainer, viewModel: AlbumListViewModel) {
         self.viewModel = viewModel
+        self.songRepo = dependencies.songRepository
     }
     var body: some View {
         ScrollView {
@@ -1165,24 +1160,23 @@ struct LibraryView: View {
     enum ViewMode: String, CaseIterable {
         case artists, albums, songs
     }
+    let logger = Logger(subsystem: subsystem, category: "LibraryView")
 
     @State private var selectedMode: ViewMode = .songs
-    @StateObject private var songListVM: SongListViewModel
+    @EnvironmentObject private var dependencies: DependencyContainer
     @StateObject private var artistVM: ArtistListViewModel
     @StateObject private var albumVM: AlbumListViewModel
+    @StateObject private var songListVM: SongListViewModel
 
-    let songRepo: SongRepository
-
-    init(songRepo: SongRepository) {
-        self.songRepo = songRepo
-        _artistVM = StateObject(wrappedValue: ArtistListViewModel(songRepo: songRepo))
-        _songListVM = StateObject(wrappedValue: SongListViewModel(songRepo: songRepo, filter: .all))
-        _albumVM = StateObject(wrappedValue: AlbumListViewModel(songRepo: songRepo))
+    init(dependencies: DependencyContainer) {
+        let dc = dependencies
+        _artistVM = StateObject(wrappedValue: dc.makeArtistListViewModel())
+        _albumVM = StateObject(wrappedValue: dc.makeAlbumListViewModel())
+        _songListVM = StateObject(wrappedValue: dc.makeSongListViewModel(filter: .all))
     }
 
     var body: some View {
         NavigationStack {
-
             VStack {
                 Picker("View Mode", selection: $selectedMode) {
                     ForEach(ViewMode.allCases, id: \.self) { mode in
@@ -1194,9 +1188,9 @@ struct LibraryView: View {
 
                 switch selectedMode {
                 case .artists:
-                    ArtistListView(songRepo: songRepo, viewModel: artistVM)
+                    ArtistListView(dependencies: dependencies, viewModel: artistVM)
                 case .albums:
-                    AlbumGridView(songRepo: songRepo, viewModel: albumVM)
+                    AlbumGridView(dependencies: dependencies, viewModel: albumVM)
                 case .songs:
                     SongListView(viewModel: songListVM)
                 }
@@ -1522,34 +1516,18 @@ struct SelectFolderView: View {
 }
 
 struct SyncView: View {
-    @StateObject private var syncViewModel: SyncViewModel
     @State private var showingFolderPicker = false
     private let logger = Logger(subsystem: subsystem, category: "SyncView")
+    @StateObject private var syncViewModel: SyncViewModel
 
-    init(
-        userCloudService: UserCloudService?,
-        icloudProvider: ICloudProvider?,
-        libraryService: LibraryService?,
-        songImportService: SongImportService?
-    ) {
-        _syncViewModel = StateObject(
-            wrappedValue: SyncViewModel(
-                userCloudService: userCloudService,
-                icloudProvider: icloudProvider,
-                libraryService: libraryService,
-                songImportService: songImportService
-            )
-        )
+    init(dependencies: DependencyContainer) {
+        _syncViewModel = StateObject(wrappedValue: dependencies.makeSyncViewModel())
     }
 
     var body: some View {
         NavigationStack {
             Group {
-                if syncViewModel.libraries.isEmpty {
-                    emptyStateView
-                } else {
-                    libraryGridView
-                }
+                libraryGridView
             }
             .navigationTitle("Music Libraries")
             .toolbar {
@@ -1998,70 +1976,43 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     }
 }
 
+struct ErrorView: View {
+    let error: String
+
+    var body: some View {
+        VStack {
+            Text("Initialization Error")
+                .font(.title)
+            Text(error)
+                .foregroundColor(.red)
+                .padding()
+        }
+    }
+}
+
 @main
 struct musicappApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    @StateObject private var dependencies: DependencyContainer
+    @StateObject private var playerVM = PlayerViewModel()
+    @StateObject private var tabState = TabState()
 
-    var body: some Scene {
-        let app = setupApp()
-        WindowGroup {
-            switch app {
-            case .success(let app):
-                MainTabView(app: app)
-                    .environmentObject(TabState())
-            case .failure(let err):
-                Text("Failed to initialize the app: \(err.localizedDescription)")
-                    .foregroundColor(.red)
-                    .padding()
-            }
-
+    init() {
+        do {
+            let c = try DependencyContainer()
+            _dependencies = StateObject(wrappedValue: c)
+        } catch {
+            _dependencies = StateObject(wrappedValue: try! DependencyContainer())
         }
+
     }
 
-    private func setupApp() -> Swift.Result<AppDependencies, CustomError> {
-        do {
-            let schemaVersion = 20
-            let db = setupSQLiteConnection(dbName: "musicapp\(schemaVersion).sqlite")
-            let userRepo = try SQLiteUserRepository(db: db!)
-            let userService = DefaultUserService(userRepository: userRepo)
-            let icloudProvider = DefaultICloudProvider()
-            let userCloudService = DefaultUserCloudService(
-                userService: userService, iCloudProvider: icloudProvider)
-            let libraryRepo = try SQLiteLibraryRepository(db: db!)
-            let libraryPathRepository = try SQLiteLibraryPathRepository(db: db!)
-            let libraryPathSearchRepository = try SQLiteLibraryPathSearchRepository(db: db!)
-            let librarySyncService = DefaultLibrarySyncService(
-                libraryRepository: libraryRepo,
-                libraryPathSearchRepository: libraryPathSearchRepository,
-                libraryPathRepository: libraryPathRepository)
-            let songRepository = try SQLiteSongRepository(db: db!)
-            let songImportService = DefaultSongImportService(
-                songRepo: songRepository,
-                libraryPathRepo: libraryPathRepository, libraryRepo: libraryRepo)
-            let libraryImportService = DefaultLibraryImportService(
-                libraryPathRepository: libraryPathRepository,
-                libraryPathSearchRepository: libraryPathSearchRepository)
-            let libraryService = DefaultLibraryService(
-                libraryRepo: libraryRepo, librarySyncService: librarySyncService,
-                libraryImportService: libraryImportService)
-            let playerPersistenceService: PlayerPersistenceService =
-                DefaultPlayerPersistenceService(
-                    songRepo: songRepository)
-
-            PlayerViewModel.shared = PlayerViewModel(
-                playerPersistenceService: playerPersistenceService)
-            let app = AppDependencies(
-                userService: userService,
-                userCloudService: userCloudService,
-                icloudProvider: icloudProvider,
-                libraryService: libraryService,
-                songRepository: songRepository,
-                songImportService: songImportService,
-                playerPersistenceService: playerPersistenceService)
-
-            return .success(app)
-        } catch {
-            return .failure(.genericError(error.localizedDescription))
+    var body: some Scene {
+        WindowGroup {
+            MainTabView()
+                .environmentObject(tabState)
+                .environmentObject(dependencies)
+                .environmentObject(playerVM)
         }
     }
 }
