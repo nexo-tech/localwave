@@ -6,6 +6,7 @@ import os
 
 /// subsystem used in logs
 let subsystem = "com.snowbear.musicapp"
+let schemaVersion = 27
 
 enum CustomError: Error {
     case genericError(_ message: String)
@@ -99,7 +100,8 @@ struct Song: Sendable {
     let coverArtPath: String?
 
     /// Security-scoped bookmark for the actual file
-    let bookmark: Data?
+    var bookmark: Data?
+    var pathHash: Int64
 
     /// Timestamps
     let createdAt: Date
@@ -115,6 +117,7 @@ struct Song: Sendable {
             trackNumber: trackNumber,
             coverArtPath: coverArtPath,
             bookmark: bookmark,
+            pathHash: pathHash,
             createdAt: createdAt,
             updatedAt: updatedAt
         )
@@ -246,6 +249,8 @@ protocol SongRepository {
     func getAllAlbums() async throws -> [Album]
 
     func getSongs(ids: [Int64]) async -> [Song]
+    func getSongByURL(_ url: URL) async -> Song?
+    func updateBookmark(songId: Int64, bookmark: Data) async throws
 }
 
 protocol LibraryImportService {
@@ -372,7 +377,7 @@ actor DefaultSongImportService: SongImportService {
         }
 
         // Resolve bookmark
-        let bookmarkKey = String(hashStringToInt64(library.dirPath))
+        let bookmarkKey = makeBookmarkKey(URL(filePath: library.dirPath))
         guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
             logger.error("Missing bookmark for library \(libraryId)")
             return nil
@@ -430,6 +435,24 @@ actor DefaultSongImportService: SongImportService {
         try await currentImportTask!.value
     }
 
+    // NEW: Bookmark validation check
+    private func checkBookmarkValidity(song: Song) -> Bool {
+        guard let bookmarkData = song.bookmark else { return false }
+
+        var isStale = false
+        do {
+            _ = try URL(
+                resolvingBookmarkData: bookmarkData,
+                options: .withoutUI,
+                relativeTo: nil,
+                bookmarkDataIsStale: &isStale
+            )
+            return !isStale
+        } catch {
+            return false
+        }
+    }
+
     /// Import all paths, recursively grabbing files from directories.
     /// - parameter onProgress: Called with (percentage from 0..100, currentFileURL).
     func importImplementation(
@@ -455,8 +478,16 @@ actor DefaultSongImportService: SongImportService {
 
             // 1) Skip if already processed
             if filePath.fileHashSHA256 != nil {
-                logger.debug("Skipping already-processed file: \(fileURL.lastPathComponent)")
-                continue
+                if let existingSong = await songRepo.getSongByURL(fileURL) {
+                    // Verify bookmark validity
+                    if checkBookmarkValidity(song: existingSong) {
+                        logger.debug("Skipping valid existing file: \(fileURL.lastPathComponent)")
+                        continue
+                    }
+                    logger.debug(
+                        "Existing bookmark invalid, reprocessing: \(fileURL.lastPathComponent)")
+                }
+
             }
 
             // 2) Compute new file hash & store in DB
@@ -482,6 +513,7 @@ actor DefaultSongImportService: SongImportService {
                 trackNumber: trackNumber,
                 coverArtPath: coverArtPath,
                 bookmark: try createBookmark(for: fileURL),
+                pathHash: makeURLHash(fileURL),
                 createdAt: Date(),
                 updatedAt: nil
             )
@@ -519,7 +551,7 @@ actor DefaultSongImportService: SongImportService {
 
     private func resolveURLFromLibrary(_ library: Library, relativePath: String) throws -> URL? {
         let folderAbsoluteString = library.dirPath
-        let bookmarkKey = String(hashStringToInt64(folderAbsoluteString))
+        let bookmarkKey = makeBookmarkKey(URL(filePath: folderAbsoluteString))
 
         guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
             logger.error("No bookmark found for library \(library.id ?? -1)")
@@ -548,9 +580,14 @@ actor DefaultSongImportService: SongImportService {
 
         return resolvedURL.appendingPathComponent(relativePath)
     }
+
     // MARK: - Create a bookmark
     private func createBookmark(for fileURL: URL) throws -> Data {
-        try fileURL.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil)
+        try fileURL.bookmarkData(
+            options: [],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
     }
 
     // MARK: - Read metadata (iOS 16+)
@@ -779,6 +816,72 @@ actor DefaultLibraryImportService: LibraryImportService {
     }
 
 }
+
+// Could be anything
+// file://
+// or path
+// or other url
+func makeURLFromString(_ s: String) -> URL {
+  // Trim whitespace and newlines.
+      let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+      
+      // If the string is empty, fallback to the current directory.
+      if trimmed.isEmpty {
+          return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+      }
+      
+      // Try parsing as a URL. If it has a scheme (like "http", "file", etc.), return it.
+      if let url = URL(string: trimmed), let scheme = url.scheme, !scheme.isEmpty {
+          return url
+      }
+      
+      // If it starts with "/" or "~", assume it's a file path.
+      if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") {
+          return URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath)
+      }
+      
+      // If it contains a dot and no spaces, assume it’s a web address missing the scheme.
+      if trimmed.contains(".") && !trimmed.contains(" ") {
+          if let url = URL(string: "http://\(trimmed)") {
+              return url
+          }
+      }
+      
+      // Fallback: treat it as a file path.
+      return URL(fileURLWithPath: trimmed)
+}
+
+func makeURLHash(_ folderURL: URL) -> Int64 {
+    return hashStringToInt64(folderURL.normalizedWithoutTrailingSlash.absoluteString)
+}
+
+func makeBookmarkKey(_ folderURL: URL) -> String {
+    return String(makeURLHash(folderURL))
+}
+
+extension URL {
+    /// Returns a normalized URL with no trailing slash in its path (unless it's just "/" for root).
+    var normalizedWithoutTrailingSlash: URL {
+        // Standardize the URL first
+        let standardizedURL = self.standardized
+        // Use URLComponents to safely modify the path
+        guard var components = URLComponents(url: standardizedURL, resolvingAgainstBaseURL: false)
+        else {
+            return standardizedURL
+        }
+
+        // Only modify if the path isn’t root and ends with a slash
+        if components.path != "/" && components.path.hasSuffix("/") {
+            // Remove all trailing slashes (leaving at least one character)
+            while components.path.count > 1 && components.path.hasSuffix("/") {
+                components.path.removeLast()
+            }
+        }
+
+        return components.url ?? standardizedURL
+    }
+}
+
 actor DefaultLibrarySyncService: LibrarySyncService {
     let logger = Logger(subsystem: subsystem, category: "LibrarySyncService")
 
@@ -812,11 +915,12 @@ actor DefaultLibrarySyncService: LibrarySyncService {
 
             let itemsToCreate = result?.allItems.map { x in
                 var parentPathId: Int64? = nil
-                if let parentPath = x.parentURL?.absoluteString {
-                    logger.debug("creating parent path: \(parentPath)")
-                    parentPathId = hashStringToInt64(parentPath)
+                if let parentURL = x.parentURL {
+                    parentPathId = makeURLHash(parentURL)
+                    logger.debug(
+                      "\(x.url) is creating parent path [\(parentPathId ?? -1)]: \(parentURL.absoluteString)")
                 }
-                let pathId = hashStringToInt64(x.url.absoluteString)
+                let pathId = makeURLHash(x.url)
                 return LibraryPath(
                     id: nil,
                     libraryId: libraryId,
@@ -876,10 +980,6 @@ actor DefaultLibrarySyncService: LibrarySyncService {
             }
             return nil
         }
-    }
-
-    func makeBookmarkKey(_ folderURL: URL) -> String {
-        return String(hashStringToInt64(folderURL.absoluteString))
     }
 
     func syncDirInner(
@@ -991,7 +1091,7 @@ class DefaultLibraryService: LibraryService {
             logger.debug("no library found, creating new one")
             // Create new library
 
-            let pathId = hashStringToInt64(URL(fileURLWithPath: path).absoluteString)
+            let pathId = makeURLHash(makeURLFromString(path))
             let lib = Library(
                 id: nil, dirPath: path, pathId: pathId, userId: userId, type: type, totalPaths: nil,
                 syncError: nil,
@@ -1736,6 +1836,11 @@ actor SQLiteLibraryPathSearchRepository: LibraryPathSearchRepository {
 }
 
 actor SQLiteSongRepository: SongRepository {
+    func updateBookmark(songId: Int64, bookmark: Data) async throws {
+        let query = songsTable.filter(colId == songId)
+        try db.run(query.update(colBookmark <- Blob(bytes: [UInt8](bookmark))))
+    }
+
     private let db: Connection
 
     // MARK: - Main "songs" table
@@ -1750,6 +1855,7 @@ actor SQLiteSongRepository: SongRepository {
     private let colTrackNumber: SQLite.Expression<Int?>
     private let colCoverArtPath: SQLite.Expression<String?>
     private let colBookmark: SQLite.Expression<Blob?>  // We'll store as Blob, parse to Data
+    private let colPathHash: SQLite.Expression<Int64>  // We'll store as Blob, parse to Data
     private let colCreatedAt: SQLite.Expression<Double>  // store date as epoch seconds
     private let colUpdatedAt: SQLite.Expression<Double?>  // optional date
 
@@ -1773,6 +1879,7 @@ actor SQLiteSongRepository: SongRepository {
         let colTrackNumber = SQLite.Expression<Int?>("trackNumber")
         let colCoverArtPath = SQLite.Expression<String?>("coverArtPath")
         let colBookmark = SQLite.Expression<Blob?>("bookmark")
+        let colPathHash = SQLite.Expression<Int64>("pathHash")
         let colCreatedAt = SQLite.Expression<Double>("createdAt")
         let colUpdatedAt = SQLite.Expression<Double?>("updatedAt")
 
@@ -1784,6 +1891,7 @@ actor SQLiteSongRepository: SongRepository {
         self.colTrackNumber = colTrackNumber
         self.colCoverArtPath = colCoverArtPath
         self.colBookmark = colBookmark
+        self.colPathHash = colPathHash
         self.colCreatedAt = colCreatedAt
         self.colUpdatedAt = colUpdatedAt
 
@@ -1798,6 +1906,7 @@ actor SQLiteSongRepository: SongRepository {
                 t.column(colTrackNumber)
                 t.column(colCoverArtPath)
                 t.column(colBookmark)
+                t.column(colPathHash)
                 t.column(colCreatedAt)
                 t.column(colUpdatedAt)
             }
@@ -1829,12 +1938,33 @@ actor SQLiteSongRepository: SongRepository {
                 trackNumber: row[colTrackNumber],
                 coverArtPath: row[colCoverArtPath],
                 bookmark: (row[colBookmark]?.bytes).map { Data($0) },
+                pathHash: row[colPathHash],
                 createdAt: Date(timeIntervalSince1970: row[colCreatedAt]),
                 updatedAt: row[colUpdatedAt].map(Date.init(timeIntervalSince1970:))
             )
         }
     }
 
+    func getSongByURL(_ url: URL) async -> Song? {
+        let pathHash = makeURLHash(url)
+        let query = songsTable.filter(colPathHash == pathHash)
+        return try? db.pluck(query).map { row in
+            Song(
+                id: row[colId],
+                songKey: row[colSongKey],
+                artist: row[colArtist],
+                title: row[colTitle],
+                album: row[colAlbum],
+                trackNumber: row[colTrackNumber],
+                coverArtPath: row[colCoverArtPath],
+                bookmark: (row[colBookmark]?.bytes).map { Data($0) },
+                pathHash: row[colPathHash],
+                createdAt: Date(timeIntervalSince1970: row[colCreatedAt]),
+                updatedAt: row[colUpdatedAt].map(Date.init(timeIntervalSince1970:))
+            )
+        }
+
+    }
     func totalSongCount(query: String) async throws -> Int {
         if query.isEmpty {
             let countQuery = "SELECT COUNT(*) FROM songs;"
@@ -1886,6 +2016,7 @@ actor SQLiteSongRepository: SongRepository {
                             <- song.bookmark.map { data in
                                 Blob(bytes: [UInt8](data))
                             },
+                        colPathHash <- song.pathHash,
                         colUpdatedAt <- now
                     )
             )
@@ -1914,6 +2045,7 @@ actor SQLiteSongRepository: SongRepository {
                     colTrackNumber <- song.trackNumber,
                     colCoverArtPath <- song.coverArtPath,
                     colBookmark <- song.bookmark.map { Blob(bytes: [UInt8]($0)) },
+                    colPathHash <- song.pathHash,
                     colCreatedAt <- song.createdAt.timeIntervalSince1970,
                     colUpdatedAt <- song.updatedAt?.timeIntervalSince1970
                 )
@@ -1944,7 +2076,7 @@ actor SQLiteSongRepository: SongRepository {
         if query.isEmpty {
             // Handle empty query - return all songs with default ordering
             sql = """
-                SELECT id, songKey, artist, title, album, trackNumber, coverArtPath, bookmark, createdAt, updatedAt
+                SELECT id, songKey, artist, title, album, trackNumber, coverArtPath, bookmark, pathHash, createdAt, updatedAt
                   FROM songs
                  ORDER BY createdAt DESC
                  LIMIT ? OFFSET ?;
@@ -1955,7 +2087,7 @@ actor SQLiteSongRepository: SongRepository {
             let processedQuery = preprocessFTSQuery(query)  // Preprocess here
             sql = """
                 SELECT s.id, s.songKey, s.artist, s.title, s.album, s.trackNumber,
-                       s.coverArtPath, s.bookmark, s.createdAt, s.updatedAt
+                       s.coverArtPath, s.bookmark, s.pathHash, s.createdAt, s.updatedAt
                   FROM songs s
                   JOIN songs_fts fts ON s.id = fts.songId
                  WHERE songs_fts MATCH ?
@@ -1981,9 +2113,10 @@ actor SQLiteSongRepository: SongRepository {
             let coverArtPath = row[6] as? String
             let bookmarkBlob = row[7] as? Blob
             let bookmarkData = bookmarkBlob.map { Data($0.bytes) }
-            let createdDouble = row[8] as? Double ?? 0
+            let pathHash = row[8] as? Int64 ?? -1
+            let createdDouble = row[9] as? Double ?? 0
             let createdAt = Date(timeIntervalSince1970: createdDouble)
-            let updatedDouble = row[9] as? Double
+            let updatedDouble = row[10] as? Double
             let updatedAt = updatedDouble.map { Date(timeIntervalSince1970: $0) }
 
             let song = Song(
@@ -1995,6 +2128,7 @@ actor SQLiteSongRepository: SongRepository {
                 trackNumber: trackNumber,
                 coverArtPath: coverArtPath,
                 bookmark: bookmarkData,
+                pathHash: pathHash,
                 createdAt: createdAt,
                 updatedAt: updatedAt
             )
@@ -2063,6 +2197,7 @@ actor SQLiteSongRepository: SongRepository {
                 trackNumber: row[colTrackNumber],
                 coverArtPath: row[colCoverArtPath],
                 bookmark: bookmarkData,
+                pathHash: row[colPathHash],
                 createdAt: Date(timeIntervalSince1970: row[colCreatedAt]),
                 updatedAt: row[colUpdatedAt].map(Date.init(timeIntervalSince1970:))
             )
@@ -2081,7 +2216,6 @@ class DependencyContainer: ObservableObject {
     let playerPersistenceService: PlayerPersistenceService
 
     init() throws {
-        let schemaVersion = 20
         guard let db = setupSQLiteConnection(dbName: "musicApp\(schemaVersion).sqlite") else {
             throw CustomError.genericError("database initialisation failed")
         }

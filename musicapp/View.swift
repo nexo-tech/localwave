@@ -426,7 +426,6 @@ struct SongListView: View {
     }
 }
 
-
 struct MiniPlayerView: View {
     @EnvironmentObject private var playerVM: PlayerViewModel  // NEW: Use EnvironmentObject
     var onTap: () -> Void
@@ -453,12 +452,15 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     @Published var currentTime: String = "0:00"
     @Published var duration: String = "0:00"
 
-    init(playerPersistenceService: PlayerPersistenceService) {
+    private let songRepo: SongRepository?
+    init(playerPersistenceService: PlayerPersistenceService, songRepo: SongRepository) {
         self.playerPersistenceService = playerPersistenceService
+        self.songRepo = songRepo
         super.init()
         setupAudioSession()
         setupRemoteCommands()
         setupInterruptionObserver()
+
     }
 
     private let playerPersistenceService: PlayerPersistenceService?
@@ -473,8 +475,10 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         }
     }
 
-    init(playerPersistenceService: PlayerPersistenceService? = nil) {
+    init(playerPersistenceService: PlayerPersistenceService? = nil, songRepo: SongRepository? = nil)
+    {
         self.playerPersistenceService = playerPersistenceService
+        self.songRepo = songRepo
         super.init()
         setupAudioSession()
         setupRemoteCommands()
@@ -613,17 +617,28 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     private func stopAndPreloadSong(_ song: Song) {
         stop()
 
-        guard let url = resolveSongURL(song),
-            let audioPlayer = try? AVAudioPlayer(contentsOf: url)
-        else {
+        guard let url = resolveSongURL(song) else {
             logger.error("Can't load song URL.")
             return
         }
 
-        player = audioPlayer
-        currentSong = song
-        player?.delegate = self
-        updateTimeDisplay()
+        guard url.startAccessingSecurityScopedResource() else {
+            logger.error("Failed to start accessing security scoped resource")
+            return
+        }
+        activeSecurityScopedURLs.append(url)
+
+        do {
+            let audioPlayer = try AVAudioPlayer(contentsOf: url)
+            player = audioPlayer
+            currentSong = song
+            player?.delegate = self
+            updateTimeDisplay()
+        } catch {
+            logger.error("Player init error: \(error)")
+            url.stopAccessingSecurityScopedResource()
+            activeSecurityScopedURLs.removeAll { $0 == url }
+        }
     }
 
     func playSong(_ song: Song) {
@@ -654,12 +669,21 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         stopTimer()
         updateNowPlayingInfo()
     }
-
+    private var activeSecurityScopedURLs = [URL]()
     func stop() {
         player?.stop()
         isPlaying = false
         playbackProgress = 0
         stopTimer()
+
+        // NEW: Release security access when done
+        if let url = player?.url {
+            url.stopAccessingSecurityScopedResource()
+        }
+
+        // Release all security scoped accesses
+        activeSecurityScopedURLs.forEach { $0.stopAccessingSecurityScopedResource() }
+        activeSecurityScopedURLs.removeAll()
     }
 
     func previousSong() {
@@ -727,11 +751,26 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
         var isStale = false
         do {
-            return try URL(
+            let url = try URL(
                 resolvingBookmarkData: bookmarkData,
                 options: .withoutUI,
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale)
+
+            // NEW: Renew bookmark if stale (log warning since we can't update DB here)
+            if isStale {
+                let newBookmark = try url.bookmarkData(options: [])
+                logger.warning("Bookmark was stale - consider reimporting this file")
+
+                // Update the song in repository
+                var updatedSong = song
+                updatedSong.bookmark = newBookmark
+                Task {
+                    _ = try await songRepo?.upsertSong(updatedSong)
+                }
+            }
+
+            return url
         } catch {
             logger.error("Bookmark error: \(error)")
             return nil
@@ -1639,7 +1678,7 @@ struct LibraryGridCell: View {
     }
 
     private var dirName: String {
-        return URL(fileURLWithPath: library.dirPath).lastPathComponent
+        return makeURLFromString(library.dirPath).lastPathComponent
     }
 
     private var libraryTypeIcon: String {
@@ -1781,7 +1820,9 @@ class SyncViewModel: ObservableObject {
     }
 
     private func resolveLibraryURL(_ library: Library) throws -> URL {
-        let bookmarkKey = String(hashStringToInt64(library.dirPath))
+        let folderURL = makeURLFromString(library.dirPath)
+        let bookmarkKey = makeBookmarkKey(folderURL)
+        logger.debug("Loading bookmark key \(bookmarkKey) of \(folderURL.absoluteString)")
         guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
             throw CustomError.genericError("Missing bookmark data")
         }
@@ -1843,11 +1884,14 @@ class SyncViewModel: ObservableObject {
             return
         }
         defer { folderURL.stopAccessingSecurityScopedResource() }
-        let bookmarkKey = String(hashStringToInt64(folderURL.path))
+        let bookmarkKey = makeBookmarkKey(folderURL)
+        // NEW: Include security scope options for directory bookmark
         let bookmarkData = try folderURL.bookmarkData(
             options: [],
             includingResourceValuesForKeys: nil,
             relativeTo: nil)
+        logger.debug("Setting bookmark key \(bookmarkKey) of \(folderURL.absoluteString)")
+
         UserDefaults.standard.set(bookmarkData, forKey: bookmarkKey)
     }
 
@@ -1862,7 +1906,7 @@ class SyncViewModel: ObservableObject {
                 logger.debug("started syncing...")
                 if folderPath != nil && libraryId != nil {
                     let result = try await libraryService?.syncService().syncDir(
-                        libraryId: libraryId!, folderURL: URL(string: folderPath!)!,
+                        libraryId: libraryId!, folderURL: makeURLFromString(folderPath!),
                         onCurrentURL: { url in
                             DispatchQueue.main.async {
                                 self.currentSyncedDir = url?.absoluteString
@@ -1955,14 +1999,14 @@ struct ErrorView: View {
 }
 
 func Oxanium(_ size: CGFloat = 16) -> Font {
-  return Font.custom("Oxanium", size: size)
+    return Font.custom("Oxanium", size: size)
 }
 
 struct ThemeProvider: ViewModifier {
     func body(content: Content) -> some View {
         content
             // .environment(\.font, .system(size: 18, weight: .medium))  // Global font
-        .font(Oxanium())
+            .font(Oxanium())
             .preferredColorScheme(.dark)  // Force dark mode
     }
 }
@@ -1977,16 +2021,17 @@ extension View {
 struct musicappApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var dependencies: DependencyContainer
-    @StateObject private var playerVM = PlayerViewModel()
+    @StateObject private var playerVM: PlayerViewModel
     @StateObject private var tabState = TabState()
 
     init() {
-        do {
-            let c = try DependencyContainer()
-            _dependencies = StateObject(wrappedValue: c)
-        } catch {
-            _dependencies = StateObject(wrappedValue: try! DependencyContainer())
-        }
+
+        let c = try! DependencyContainer()
+        _dependencies = StateObject(wrappedValue: c)
+
+        _playerVM = StateObject(
+            wrappedValue: PlayerViewModel(
+                playerPersistenceService: c.playerPersistenceService, songRepo: c.songRepository))
 
     }
 
@@ -1996,10 +2041,9 @@ struct musicappApp: App {
                 .environmentObject(tabState)
                 .environmentObject(dependencies)
                 .environmentObject(playerVM)
-                // .font(Font.custom("Oxanium-VariableFont_wght.ttf", size: 18))
                 .applyTheme()
         }
-//        .defaultSize(width: 600, height: 600) // Default window size
+        //        .defaultSize(width: 600, height: 600) // Default window size
 
     }
 }

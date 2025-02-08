@@ -64,7 +64,7 @@ struct MiniPlayerViewInner: View {
 
     let defaultSong = Song(
         id: 1231, songKey: 3132, artist: "Song Master",
-        title: "The music for dogs", album: "x", trackNumber: 1, coverArtPath: nil, bookmark: nil,
+        title: "The music for dogs", album: "x", trackNumber: 1, coverArtPath: nil, bookmark: nil,pathHash: -1,
         createdAt: Date(), updatedAt: nil
     )
     VStack {
