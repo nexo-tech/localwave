@@ -194,36 +194,6 @@
             endingLineNumber = "260"
             landmarkName = "searchFiles(path:recursive:query:foundItemHandler:completionHandler:)"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "B697605B-FBC0-4B56-9CE7-0D35A99B5842 - f782d84e2538c8c"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "closure #3 @Sendable (Foundation.Notification) -&gt; () in FilesProvider.CloudFileProvider.searchFiles(path: Swift.String, recursive: Swift.Bool, query: __C.NSPredicate, foundItemHandler: Swift.Optional&lt;(FilesProvider.FileObject) -&gt; ()&gt;, completionHandler: (Swift.Array&lt;FilesProvider.FileObject&gt;, Swift.Optional&lt;Swift.Error&gt;) -&gt; ()) -&gt; Swift.Optional&lt;__C.NSProgress&gt;"
-                  moduleName = "musicapp.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/snowbear/Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "260"
-                  endingLineNumber = "260">
-               </Location>
-               <Location
-                  uuid = "B697605B-FBC0-4B56-9CE7-0D35A99B5842 - f782d84e2538c8c"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "closure #3 @Sendable (Foundation.Notification) -&gt; () in FilesProvider.CloudFileProvider.searchFiles(path: Swift.String, recursive: Swift.Bool, query: __C.NSPredicate, foundItemHandler: Swift.Optional&lt;(FilesProvider.FileObject) -&gt; ()&gt;, completionHandler: (Swift.Array&lt;FilesProvider.FileObject&gt;, Swift.Optional&lt;Swift.Error&gt;) -&gt; ()) -&gt; Swift.Optional&lt;__C.NSProgress&gt;"
-                  moduleName = "musicapp.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/snowbear/Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "260"
-                  endingLineNumber = "260">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -288,36 +258,6 @@
             endingLineNumber = "204"
             landmarkName = "searchFiles(path:recursive:query:foundItemHandler:completionHandler:)"
             landmarkType = "7">
-            <Locations>
-               <Location
-                  uuid = "3772F3F3-E7C9-4F9D-A4C1-53FB982AA233 - 62877eac8ebfacb3"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "FilesProvider.CloudFileProvider.searchFiles(path: Swift.String, recursive: Swift.Bool, query: __C.NSPredicate, foundItemHandler: Swift.Optional&lt;(FilesProvider.FileObject) -&gt; ()&gt;, completionHandler: (Swift.Array&lt;FilesProvider.FileObject&gt;, Swift.Optional&lt;Swift.Error&gt;) -&gt; ()) -&gt; Swift.Optional&lt;__C.NSProgress&gt;"
-                  moduleName = "musicapp.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/snowbear/Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "204"
-                  endingLineNumber = "204">
-               </Location>
-               <Location
-                  uuid = "3772F3F3-E7C9-4F9D-A4C1-53FB982AA233 - 4c0073cae7e440ce"
-                  shouldBeEnabled = "Yes"
-                  ignoreCount = "0"
-                  continueAfterRunningActions = "No"
-                  symbolName = "closure #1 () -&gt; () in FilesProvider.CloudFileProvider.searchFiles(path: Swift.String, recursive: Swift.Bool, query: __C.NSPredicate, foundItemHandler: Swift.Optional&lt;(FilesProvider.FileObject) -&gt; ()&gt;, completionHandler: (Swift.Array&lt;FilesProvider.FileObject&gt;, Swift.Optional&lt;Swift.Error&gt;) -&gt; ()) -&gt; Swift.Optional&lt;__C.NSProgress&gt;"
-                  moduleName = "musicapp.debug.dylib"
-                  usesParentBreakpointCondition = "Yes"
-                  urlString = "file:///Users/snowbear/Library/Developer/Xcode/DerivedData/musicapp-azasgwnxigrqszehxcednlweoscw/SourcePackages/checkouts/FileProvider/Sources/CloudFileProvider.swift"
-                  startingColumnNumber = "9223372036854775807"
-                  endingColumnNumber = "9223372036854775807"
-                  startingLineNumber = "204"
-                  endingLineNumber = "204">
-               </Location>
-            </Locations>
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -428,7 +368,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "313"
             endingLineNumber = "313"
-            landmarkName = "loadTotalSongs()"
+            landmarkName = "loadMoreIfNeeded(currentSong:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -444,7 +384,7 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "312"
             endingLineNumber = "312"
-            landmarkName = "loadTotalSongs()"
+            landmarkName = "loadMoreIfNeeded(currentSong:)"
             landmarkType = "7">
          </BreakpointContent>
       </BreakpointProxy>
@@ -620,8 +560,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "210"
             endingLineNumber = "210"
-            landmarkName = "SongRow"
-            landmarkType = "14">
+            landmarkName = "Filter"
+            landmarkType = "13">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy
@@ -636,8 +576,8 @@
             endingColumnNumber = "9223372036854775807"
             startingLineNumber = "209"
             endingLineNumber = "209"
-            landmarkName = "body"
-            landmarkType = "24">
+            landmarkName = "SongListViewModel"
+            landmarkType = "3">
          </BreakpointContent>
       </BreakpointProxy>
       <BreakpointProxy

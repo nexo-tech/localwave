@@ -143,8 +143,6 @@ extension CustomTabView {
     }
 }
 
-// MARK: - Usage Example
-
 struct MainTabView: View {
     @EnvironmentObject private var dependencies: DependencyContainer
     @EnvironmentObject private var tabState: TabState
@@ -156,9 +154,6 @@ struct MainTabView: View {
             CustomTabView(selection: $tabState.selectedTab) {
                 TabItem(label: "Library", systemImage: "books.vertical", tag: 0) {
                     LibraryView(dependencies: dependencies)
-                }
-                TabItem(label: "Player", systemImage: "play.circle", tag: 1) {
-                    PlayerView().environmentObject(playerVM)
                 }
                 TabItem(label: "Sync", systemImage: "icloud.and.arrow.down", tag: 2) {
                     SyncView(dependencies: dependencies)
@@ -865,9 +860,22 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 struct PlayerView: View {
     @EnvironmentObject private var playerVM: PlayerViewModel  // NEW: Use EnvironmentObject
     @State private var editingProgress: Double?
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         VStack(spacing: 20) {
+            HStack {
+                Spacer()
+                Button(action: {
+                    dismiss()
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.largeTitle)
+                        .foregroundColor(.gray)
+                }
+            }
+            .padding(.top)
+
             if let song = playerVM.currentSong {
                 songInfoView(song: song)
                 progressView()
@@ -875,6 +883,7 @@ struct PlayerView: View {
             } else {
                 emptyStateView()
             }
+            Spacer()
         }
         .padding()
         .onAppear {
@@ -1244,12 +1253,8 @@ struct AlbumSongListView: View {
 }
 
 struct LibraryView: View {
-    enum ViewMode: String, CaseIterable {
-        case artists, albums, songs
-    }
     let logger = Logger(subsystem: subsystem, category: "LibraryView")
 
-    @State private var selectedMode: ViewMode = .songs
     @EnvironmentObject private var dependencies: DependencyContainer
     @StateObject private var artistVM: ArtistListViewModel
     @StateObject private var albumVM: AlbumListViewModel
@@ -1264,29 +1269,21 @@ struct LibraryView: View {
 
     var body: some View {
         NavigationStack {
-            VStack {
-                Picker("View Mode", selection: $selectedMode) {
-                    ForEach(ViewMode.allCases, id: \.self) { mode in
-                        Text(mode.rawValue.capitalized)
-                    }
-                }
-                .pickerStyle(SegmentedPickerStyle())
-                .padding()
-
-                switch selectedMode {
-                case .artists:
-                    ArtistListView(dependencies: dependencies, viewModel: artistVM)
-                case .albums:
-                    AlbumGridView(dependencies: dependencies, viewModel: albumVM)
-                case .songs:
-                    SongListView(viewModel: songListVM)
-                }
+            List {
+                NavigationLink(
+                    "Artists",
+                    destination: ArtistListView(dependencies: dependencies, viewModel: artistVM))
+                NavigationLink(
+                    "Albums",
+                    destination: AlbumGridView(dependencies: dependencies, viewModel: albumVM))
+                NavigationLink("Songs", destination: SongListView(viewModel: songListVM))
             }
-            .onAppear {
-                Task {
-                    try? await artistVM.loadArtists()
-                    try? await albumVM.loadAlbums()
-                }
+            .navigationTitle("Library")
+        }
+        .onAppear {
+            Task {
+                try? await artistVM.loadArtists()
+                try? await albumVM.loadAlbums()
             }
         }
     }

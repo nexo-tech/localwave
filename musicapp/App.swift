@@ -31,6 +31,20 @@ enum LibraryType: String, Codable, CaseIterable {
     case iCloud
 }
 
+struct Playlist: Identifiable, Sendable {
+    let id: Int64?
+    let name: String
+    let createdAt: Date
+    let updatedAt: Date?
+}
+
+struct PlaylistSong: Identifiable, Sendable {
+    let id: Int64?
+    let playlistId: Int64
+    let songId: Int64
+    let position: Int  // New: For ordering
+}
+
 struct Library: Sendable, Identifiable {
     var id: Int64?
     var dirPath: String
@@ -167,6 +181,21 @@ protocol PlayerPersistenceService {
     func getVolume() async -> Float
     func restore() async -> ([Song], Int, Song?)?
     func savePlaybackState(volume: Float, currentIndex: Int, songs: [Song]) async
+}
+
+protocol PlaylistRepository {
+    func create(playlist: Playlist) async throws -> Playlist
+    func update(playlist: Playlist) async throws -> Playlist
+    func delete(playlistId: Int64) async throws
+    func getAll() async throws -> [Playlist]
+    func getOne(id: Int64) async throws -> Playlist?
+}
+
+protocol PlaylistSongRepository {
+    func addSong(playlistId: Int64, songId: Int64) async throws
+    func removeSong(playlistId: Int64, songId: Int64) async throws
+    func getSongs(playlistId: Int64) async throws -> [Song]
+    func reorderSongs(playlistId: Int64, newOrder: [Int64]) async throws  // New
 }
 
 actor DefaultPlayerPersistenceService: PlayerPersistenceService {
@@ -822,33 +851,33 @@ actor DefaultLibraryImportService: LibraryImportService {
 // or path
 // or other url
 func makeURLFromString(_ s: String) -> URL {
-  // Trim whitespace and newlines.
-      let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
-      
-      // If the string is empty, fallback to the current directory.
-      if trimmed.isEmpty {
-          return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-      }
-      
-      // Try parsing as a URL. If it has a scheme (like "http", "file", etc.), return it.
-      if let url = URL(string: trimmed), let scheme = url.scheme, !scheme.isEmpty {
-          return url
-      }
-      
-      // If it starts with "/" or "~", assume it's a file path.
-      if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") {
-          return URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath)
-      }
-      
-      // If it contains a dot and no spaces, assume it’s a web address missing the scheme.
-      if trimmed.contains(".") && !trimmed.contains(" ") {
-          if let url = URL(string: "http://\(trimmed)") {
-              return url
-          }
-      }
-      
-      // Fallback: treat it as a file path.
-      return URL(fileURLWithPath: trimmed)
+    // Trim whitespace and newlines.
+    let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // If the string is empty, fallback to the current directory.
+    if trimmed.isEmpty {
+        return URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    }
+
+    // Try parsing as a URL. If it has a scheme (like "http", "file", etc.), return it.
+    if let url = URL(string: trimmed), let scheme = url.scheme, !scheme.isEmpty {
+        return url
+    }
+
+    // If it starts with "/" or "~", assume it's a file path.
+    if trimmed.hasPrefix("/") || trimmed.hasPrefix("~") {
+        return URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath)
+    }
+
+    // If it contains a dot and no spaces, assume it’s a web address missing the scheme.
+    if trimmed.contains(".") && !trimmed.contains(" ") {
+        if let url = URL(string: "http://\(trimmed)") {
+            return url
+        }
+    }
+
+    // Fallback: treat it as a file path.
+    return URL(fileURLWithPath: trimmed)
 }
 
 func makeURLHash(_ folderURL: URL) -> Int64 {
@@ -918,7 +947,8 @@ actor DefaultLibrarySyncService: LibrarySyncService {
                 if let parentURL = x.parentURL {
                     parentPathId = makeURLHash(parentURL)
                     logger.debug(
-                      "\(x.url) is creating parent path [\(parentPathId ?? -1)]: \(parentURL.absoluteString)")
+                        "\(x.url) is creating parent path [\(parentPathId ?? -1)]: \(parentURL.absoluteString)"
+                    )
                 }
                 let pathId = makeURLHash(x.url)
                 return LibraryPath(
@@ -2203,6 +2233,97 @@ actor SQLiteSongRepository: SongRepository {
             )
         }
     }
+}
+
+actor SQLitePlaylistRepository: PlaylistRepository {
+    private let db: Connection
+    private let table = Table("playlists")
+    private let colId: SQLite.Expression<Int64>
+    private let colName: SQLite.Expression<String>
+    private let colCreatedAt: SQLite.Expression<Date>
+    private let colUpdatedAt: SQLite.Expression<Date?>
+
+    init(db: Connection) throws {
+        self.db = db
+
+        let colId = SQLite.Expression<Int64>("id")
+        let colName = SQLite.Expression<String>("name")
+        let colCreatedAt = SQLite.Expression<Date>("createdAt")
+        let colUpdatedAt = SQLite.Expression<Date?>("updatedAt")
+        try db.run(
+            table.create(ifNotExists: true) { t in
+                t.column(colId, primaryKey: .autoincrement)
+                t.column(colName)
+                t.column(colCreatedAt)
+                t.column(colUpdatedAt)
+            })
+        self.colId = colId
+        self.colName = colName
+        self.colCreatedAt = colCreatedAt
+        self.colUpdatedAt = colUpdatedAt
+    }
+
+    func create(playlist: Playlist) throws -> Playlist {
+        let insert = table.insert(
+            colName <- playlist.name,
+            colCreatedAt <- playlist.createdAt,
+            colUpdatedAt <- playlist.updatedAt
+        )
+        let rowId = try db.run(insert)
+        return Playlist(
+            id: rowId, name: playlist.name, createdAt: playlist.createdAt,
+            updatedAt: playlist.updatedAt)
+    }
+
+    // Implement other methods...
+}
+
+actor SQLitePlaylistSongRepository: PlaylistSongRepository {
+    private let db: Connection
+    private let table = Table("playlist_songs")
+    private let colId: SQLite.Expression<Int64>
+    private let colPlaylistId: SQLite.Expression<Int64>
+    private let colSongId: SQLite.Expression<Int64>
+    private let colPosition: SQLite.Expression<Int>
+
+    init(db: Connection) throws {
+        self.db = db
+
+        let colId = SQLite.Expression<Int64>("id")
+        let colPlaylistId = SQLite.Expression<Int64>("playlistId")
+        let colSongId = SQLite.Expression<Int64>("songId")
+        let colPosition = SQLite.Expression<Int>("position")
+
+        try db.run(
+            table.create(ifNotExists: true) { t in
+                t.column(colId, primaryKey: .autoincrement)
+                t.column(colPlaylistId)
+                t.column(colSongId)
+                t.column(colPosition)
+            })
+
+        self.colId = colId
+        self.colPlaylistId = colPlaylistId
+        self.colSongId = colSongId
+        self.colPosition = colPosition
+    }
+
+    func addSong(playlistId: Int64, songId: Int64) async throws {
+        let maxPosition =
+            try db.scalar(
+                table.filter(colPlaylistId == playlistId)
+                    .select(colPosition.max)
+            ) ?? -1
+
+        let insert = table.insert(
+            colPlaylistId <- playlistId,
+            colSongId <- songId,
+            colPosition <- maxPosition + 1
+        )
+        try db.run(insert)
+    }
+
+    // Implement other methods...
 }
 
 @MainActor
