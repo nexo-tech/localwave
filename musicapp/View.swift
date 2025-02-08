@@ -56,6 +56,95 @@ class TabState: ObservableObject {
     @Published var selectedTab: Int = 0
 }
 
+struct CustomTabView: View {
+    @Binding var selection: Int
+    let tabs: [TabItem]
+
+    init(selection: Binding<Int>, @TabItemBuilder content: () -> [TabItem]) {
+        self._selection = selection
+        self.tabs = content()
+    }
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            // Main content
+            tabs[selection].content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // Custom tab bar
+            HStack {
+                ForEach(tabs.indices, id: \.self) { index in
+                    Button(action: {
+                        withAnimation {
+                            selection = index
+                        }
+                    }) {
+                        VStack(spacing: 4) {
+                            Image(systemName: tabs[index].systemImage)
+                                .font(.system(size: 22, weight: .semibold))
+                            Text(tabs[index].label)
+                                .font(.caption)
+                        }
+                        .foregroundColor(selection == index ? .accentColor : .gray)
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .padding(.top)
+            .frame(height: 60)
+            .background(.thinMaterial)
+        }
+    }
+}
+
+// MARK: - Supporting Types
+
+struct TabItem: Identifiable {
+    let id = UUID()
+    let label: String
+    let systemImage: String
+    let content: AnyView
+    let tag: Int
+
+    init<Content: View>(
+        label: String, systemImage: String, tag: Int, @ViewBuilder content: () -> Content
+    ) {
+        self.label = label
+        self.systemImage = systemImage
+        self.tag = tag
+        self.content = AnyView(content())
+    }
+}
+
+protocol TabViewBuilder {
+    var tabs: [TabItem] { get }
+}
+
+@resultBuilder
+struct TabItemBuilder {
+    static func buildBlock(_ components: TabItem...) -> [TabItem] {
+        components
+    }
+}
+
+// MARK: - TabViewBuilder Implementation
+
+extension CustomTabView {
+    struct TabViewContainer: View, TabViewBuilder {
+        let tabs: [TabItem]
+
+        var body: some View {
+            EmptyView()
+        }
+    }
+
+    static func buildBlock(_ components: TabItem...) -> TabViewContainer {
+        return TabViewContainer(tabs: components)
+    }
+}
+
+// MARK: - Usage Example
+
 struct MainTabView: View {
     @EnvironmentObject private var dependencies: DependencyContainer
     @EnvironmentObject private var tabState: TabState
@@ -64,21 +153,16 @@ struct MainTabView: View {
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            TabView(selection: $tabState.selectedTab) {
-                LibraryView(dependencies: dependencies).tabItem {
-                    Label("Library", systemImage: "books.vertical")
-                }.tag(0)
-
-                PlayerView()
-                    .tabItem {
-                        Label("Player", systemImage: "play.circle")
-                    }.environmentObject(playerVM).tag(1)
-
-                VStack {
+            CustomTabView(selection: $tabState.selectedTab) {
+                TabItem(label: "Library", systemImage: "books.vertical", tag: 0) {
+                    LibraryView(dependencies: dependencies)
+                }
+                TabItem(label: "Player", systemImage: "play.circle", tag: 1) {
+                    PlayerView().environmentObject(playerVM)
+                }
+                TabItem(label: "Sync", systemImage: "icloud.and.arrow.down", tag: 2) {
                     SyncView(dependencies: dependencies)
-                }.tabItem {
-                    Label("Sync", systemImage: "icloud.and.arrow.down")
-                }.tag(2)
+                }
             }
             .environmentObject(tabState)
             .accentColor(.cyan)
@@ -86,7 +170,7 @@ struct MainTabView: View {
             MiniPlayerView {
                 isPlayerPresented = true
             }
-            .padding(.bottom, 60)  // Adjust based on your tab bar height
+            .padding(.bottom, 60)
         }
         .fullScreenCover(isPresented: $isPlayerPresented) {
             PlayerView().environmentObject(playerVM)
