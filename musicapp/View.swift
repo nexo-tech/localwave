@@ -486,14 +486,14 @@ struct SongListView: View {
 
             Text(
                 searchText.isEmpty
-                    ? "Add a music library to get started"
+                    ? "Add a music source to get started"
                     : "No matches found for '\(searchText)'"
             )
             .multilineTextAlignment(.center)
             .foregroundColor(.secondary)
 
             if searchText.isEmpty {
-                Button("Add Library") {
+                Button("Add Source") {
                     tabState.selectedTab = 2
                 }
                 .buttonStyle(.borderedProminent)
@@ -1101,7 +1101,7 @@ struct ArtistListView: View {
             Text("No Artists Found")
                 .font(.title2)
 
-            Text("Add a music library with audio files to populate artists")
+            Text("Add a music source with audio files to populate artists")
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
         }
@@ -1200,7 +1200,7 @@ struct AlbumGridView: View {
             Text("No Albums Found")
                 .font(.title2)
 
-            Text("Add a music library with audio files to populate albums")
+            Text("Add a music source with audio files to populate albums")
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
         }
@@ -1327,14 +1327,14 @@ struct LibraryView: View {
 }
 
 @MainActor
-class LibraryBrowseViewModel: ObservableObject {
-    private let service: LibraryImportService
-    private let libraryId: Int64
+class SourceBrowseViewModel: ObservableObject {
+    private let service: SourceImportService
+    private let sourceId: Int64
     @Published var isImporting = false
     /// A stack of visited parentPathIds; the last element is the "current folder."
     @Published private var pathStack: [Int64?] = [nil]
 
-    @Published var items: [LibraryPath] = []
+    @Published var items: [SourcePath] = []
     @Published var searchTerm: String = ""
 
     /// For checkboxes on any item (folders or files).
@@ -1350,9 +1350,9 @@ class LibraryBrowseViewModel: ObservableObject {
         pathStack.count > 1
     }
 
-    init(service: LibraryImportService, libraryId: Int64, initialParentPathId: Int64? = nil) {
+    init(service: SourceImportService, sourceId: Int64, initialParentPathId: Int64? = nil) {
         self.service = service
-        self.libraryId = libraryId
+        self.sourceId = sourceId
         if let initialParent = initialParentPathId {
             pathStack = [nil, initialParent]
         }
@@ -1362,16 +1362,16 @@ class LibraryBrowseViewModel: ObservableObject {
         do {
             if searchTerm.isEmpty {
                 items = try await service.listItems(
-                    libraryId: libraryId, parentPathId: parentPathId)
+                    sourceId: sourceId, parentPathId: parentPathId)
             } else {
-                items = try await service.search(libraryId: libraryId, query: searchTerm)
+                items = try await service.search(sourceId: sourceId, query: searchTerm)
             }
         } catch {
             logger.error("Load items error: \(error)")
         }
     }
 
-    let logger = Logger(subsystem: subsystem, category: "LibraryBrowseViewModel")
+    let logger = Logger(subsystem: subsystem, category: "SourceBrowseViewModel")
 
     /// Navigate into a subfolder (push on stack).
     func goIntoFolder(with pathId: Int64) {
@@ -1398,45 +1398,47 @@ class LibraryBrowseViewModel: ObservableObject {
     }
 }
 
-struct LibraryBrowseView: View {
-    let libraryId: Int64
+struct SourceBrowseView: View {
+    let sourceId: Int64
     let parentPathId: Int64?
-    let libraryImportService: LibraryImportService?
+    let sourceImportService: SourceImportService?
     let songImportService: SongImportService?
-    @StateObject var viewModel: LibraryBrowseViewModel  // NEW: now passed in
+    @StateObject var viewModel: SourceBrowseViewModel  // NEW: now passed in
 
     init(
-        libraryId: Int64,
+        sourceId: Int64,
         parentPathId: Int64?,
-        libraryImportService: LibraryImportService?,
+        sourceImportService: SourceImportService?,
         songImportService: SongImportService?,
-        viewModel: LibraryBrowseViewModel? = nil  // NEW
+        viewModel: SourceBrowseViewModel? = nil  // NEW
 
     ) {
-        self.libraryId = libraryId
+        self.sourceId = sourceId
         self.parentPathId = parentPathId
-        self.libraryImportService = libraryImportService
+        self.sourceImportService = sourceImportService
         self.songImportService = songImportService
         if let vm = viewModel {
             _viewModel = StateObject(wrappedValue: vm)
         } else {
             _viewModel = StateObject(
-                wrappedValue: LibraryBrowseViewModel(
-                    service: libraryImportService!,
-                    libraryId: libraryId,
+                wrappedValue: SourceBrowseViewModel(
+                    service: sourceImportService!,
+                    sourceId: sourceId,
                     initialParentPathId: parentPathId
                 ))
         }
     }
 
     var body: some View {
-        if let service: any LibraryImportService = libraryImportService, let importService = songImportService {
+        if let service: any SourceImportService = sourceImportService,
+            let importService = songImportService
+        {
             NavigationStack {
-                // The LibraryBrowseViewInternal (which lists files/folders) remains unchanged.
-                LibraryBrowseViewInternal(
-                    libraryId: libraryId,
+                // The SourceBrowseViewInternal (which lists files/folders) remains unchanged.
+                SourceBrowseViewInternal(
+                    sourceId: sourceId,
                     parentPathId: parentPathId,
-                    libraryImportService: service,
+                    sourceImportService: service,
                     songImportService: importService
                 )
             }
@@ -1447,30 +1449,30 @@ struct LibraryBrowseView: View {
     }
 }
 
-struct LibraryBrowseViewInternal: View {
-    @StateObject var viewModel: LibraryBrowseViewModel
+struct SourceBrowseViewInternal: View {
+    @StateObject var viewModel: SourceBrowseViewModel
     @State private var showImportProgress = false
     @State private var importProgress: Double = 0
     @State private var currentFileName: String = ""
     let songImportService: SongImportService
 
     init(
-        libraryId: Int64,
+        sourceId: Int64,
         parentPathId: Int64? = nil,
-        libraryImportService: LibraryImportService,
+        sourceImportService: SourceImportService,
         songImportService: SongImportService
     ) {
         _viewModel = StateObject(
-            wrappedValue: LibraryBrowseViewModel(
-                service: libraryImportService,
-                libraryId: libraryId,
+            wrappedValue: SourceBrowseViewModel(
+                service: sourceImportService,
+                sourceId: sourceId,
                 initialParentPathId: parentPathId
             )
         )
         self.songImportService = songImportService
     }
 
-    private var logger = Logger(subsystem: subsystem, category: "LibraryBrowseView")
+    private var logger = Logger(subsystem: subsystem, category: "SourceBrowsViewInternal")
     var body: some View {
         VStack {
             VStack {
@@ -1592,7 +1594,7 @@ struct LibraryBrowseViewInternal: View {
                 }
                 .listStyle(.plain)
             }
-            .navigationTitle("Library Browser")
+            .navigationTitle("Source Browser")
         }
         .onAppear {
             Task { await viewModel.loadItems() }
@@ -1657,6 +1659,10 @@ struct SyncView: View {
     private let logger = Logger(subsystem: subsystem, category: "SyncView")
     @StateObject private var syncViewModel: SyncViewModel
     private var dependencies: DependencyContainer
+
+    // NEW: New state to let user toggle between single-source and grid view.
+    @State private var showGrid: Bool = false
+
     init(dependencies: DependencyContainer) {
         _syncViewModel = StateObject(wrappedValue: dependencies.makeSyncViewModel())
         self.dependencies = dependencies
@@ -1664,95 +1670,123 @@ struct SyncView: View {
 
     var body: some View {
         NavigationStack {
-            if syncViewModel.libraries.count == 1,
-                let singleLibrary = syncViewModel.libraries.first,
-                let libraryId = singleLibrary.id
-            {
-                // NEW: Automatically open the single library’s browse view.
-                let browseVM =
-                    (dependencies.libraryBrowseViewModels[libraryId]
-                        ?? LibraryBrowseViewModel(
-                            service: syncViewModel.libraryService!.importService(),
-                            libraryId: libraryId,
-                            initialParentPathId: singleLibrary.pathId
-                        ))
-                LibraryBrowseView(
-                    libraryId: libraryId,
-                    parentPathId: singleLibrary.pathId,
-                    libraryImportService: syncViewModel.libraryService?.importService(),
-                    songImportService: syncViewModel.songImportService,
-                    viewModel: browseVM  // NEW: pass the persisted view model
-                ).onAppear {  
-                // Store the instance so it’s reused.
-                DispatchQueue.main.async {
-                    dependencies.libraryBrowseViewModels[libraryId] = browseVM
+            contentView
+                .navigationTitle("Music Sources")
+                .toolbar {
+                    // Always allow adding a source.
+                    ToolbarItem(placement: .navigationBarTrailing) {
+                        Button {
+                            showingFolderPicker = true
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                    }
                 }
+                .fileImporter(
+                    isPresented: $showingFolderPicker,
+                    allowedContentTypes: [.folder],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handleFolderSelection(result: result)
                 }
-            } else {
-                libraryGridView
-            }
-
-        }
-        .navigationTitle("Music Libraries")
-        .toolbar {
-                Button {
-                    showingFolderPicker = true
-                } label: {
-                    Image(systemName: "plus")
+                .onAppear {
+                    syncViewModel.loadSources()
                 }
-        }
-        .fileImporter(
-            isPresented: $showingFolderPicker,
-            allowedContentTypes: [.folder],
-            allowsMultipleSelection: false
-        ) { result in
-            handleFolderSelection(result: result)
-        }
-        .onAppear {
-            syncViewModel.loadLibraries()
         }
     }
-    // In SyncView’s libraryGridView ForEach, update LibraryGridCell creation to include onDelete: // NEW
-    private var libraryGridView: some View {
+
+    // NEW: Extracted content view that shows either a single source view or the grid.
+    @ViewBuilder
+    private var contentView: some View {
+        if syncViewModel.sources.isEmpty {
+            emptyStateView
+        }
+        // If there is only one source and we are not forcing grid view...
+        else if syncViewModel.sources.count == 1 && !showGrid {
+            if let singleSource = syncViewModel.sources.first,
+                let sourceId = singleSource.id
+            {
+                // NEW: Retrieve (or create) the browse view model.
+                let browseVM =
+                    dependencies.sourceBrowseViewModels[sourceId]
+                    ?? SourceBrowseViewModel(
+                        service: syncViewModel.sourceService!.importService(),
+                        sourceId: sourceId,
+                        initialParentPathId: singleSource.pathId
+                    )
+                SourceBrowseView(
+                    sourceId: sourceId,
+                    parentPathId: singleSource.pathId,
+                    sourceImportService: syncViewModel.sourceService?.importService(),
+                    songImportService: syncViewModel.songImportService,
+                    viewModel: browseVM  // NEW
+                )
+                .onAppear {
+                    DispatchQueue.main.async {
+                        dependencies.sourceBrowseViewModels[sourceId] = browseVM
+                    }
+                }
+                .toolbar {
+                    // NEW: Allow user to go back to the grid.
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Grid") {
+                            showGrid = true
+                        }
+                    }
+                }
+            }
+        } else {
+            // NEW: Show the source grid view if more than one source exists or user chooses grid.
+            sourceGridView
+                .toolbar {
+                    ToolbarItem(placement: .navigationBarLeading) {
+                        Button("Back to Grid") {
+                            showGrid = true
+                        }
+                    }
+                }
+        }
+    }
+
+    private var sourceGridView: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 20)], spacing: 20) {
-                ForEach(syncViewModel.libraries, id: \.stableId) { (library: Library) in
+                ForEach(syncViewModel.sources, id: \.stableId) { (source: Source) in
                     NavigationLink {
-                        if let libraryId = library.id {
-                            // NEW: When navigating, try to reuse a persisted LibraryBrowseViewModel.
+                        if let sourceId = source.id {
                             let browseVM =
-                                (dependencies.libraryBrowseViewModels[libraryId]
-                                    ?? LibraryBrowseViewModel(
-                                        service: syncViewModel.libraryService!.importService(),
-                                        libraryId: libraryId,
-                                        initialParentPathId: library.pathId
-                                    ))
-
-                            LibraryBrowseView(
-                                libraryId: libraryId,
-                                parentPathId: library.pathId,
-                                libraryImportService: syncViewModel.libraryService?.importService(),
+                                dependencies.sourceBrowseViewModels[sourceId]
+                                ?? SourceBrowseViewModel(
+                                    service: syncViewModel.sourceService!.importService(),
+                                    sourceId: sourceId,
+                                    initialParentPathId: source.pathId
+                                )
+                            SourceBrowseView(
+                                sourceId: sourceId,
+                                parentPathId: source.pathId,
+                                sourceImportService: syncViewModel.sourceService?.importService(),
                                 songImportService: syncViewModel.songImportService,
                                 viewModel: browseVM  // NEW
-                            ).onAppear {
+                            )
+                            .onAppear {
                                 DispatchQueue.main.async {
-                                    dependencies.libraryBrowseViewModels[libraryId] = browseVM
+                                    dependencies.sourceBrowseViewModels[sourceId] = browseVM
                                 }
                             }
                         }
                     } label: {
-                        LibraryGridCell(
-                            library: library,
-                            isSyncing: syncViewModel.currentSyncLibraryId == library.id,
+                        SourceGridCell(
+                            source: source,
+                            isSyncing: syncViewModel.currentSyncSourceId == source.id,
                             onResync: {
                                 logger.debug(
-                                    "resyncing library: \(library.id ?? -1), path: \(library.dirPath)"
+                                    "resyncing source: \(source.id ?? -1), path: \(source.dirPath)"
                                 )
-                                syncViewModel.resyncLibrary(library)
+                                syncViewModel.resyncSource(source)
                             },
                             onDelete: {
-                                // NEW: Delete the library (and its associated paths) via syncViewModel.
-                                syncViewModel.deleteLibrary(library)  // NEW; see next change for deleteLibrary implementation
+                                // NEW: Delete source via sync view model.
+                                syncViewModel.deleteSource(source)
                             }
                         )
                         .padding()
@@ -1771,12 +1805,12 @@ struct SyncView: View {
             Image(systemName: "folder.badge.plus")
                 .font(.system(size: 60))
                 .foregroundColor(.blue)
-            Text("No Libraries Added")
+            Text("No Sources Added")
                 .font(.title2)
-            Text("Get started by adding your first music library from iCloud")
+            Text("Get started by adding your first music source from iCloud")
                 .multilineTextAlignment(.center)
                 .foregroundColor(.secondary)
-            Button("Add iCloud Library") {
+            Button("Add iCloud Source") {
                 showingFolderPicker = true
             }
             .buttonStyle(.borderedProminent)
@@ -1792,7 +1826,9 @@ struct SyncView: View {
             do {
                 logger.debug("new path is getting synced: \(url)")
                 try syncViewModel.registerBookmark(url)
-                syncViewModel.createLibrary(path: url.path)
+                syncViewModel.createSource(path: url.path)
+                // NEW: After adding a new source, switch to grid view so the new source is visible.
+                showGrid = true
             } catch {
                 logger.error("Folder selection error: \(error.localizedDescription)")
             }
@@ -1802,12 +1838,10 @@ struct SyncView: View {
     }
 }
 
-// In LibraryGridCell, add a context menu for deletion: // NEW
-struct LibraryGridCell: View {
-    let library: Library
+struct SourceGridCell: View {
+    let source: Source
     let isSyncing: Bool
     let onResync: () -> Void
-    // NEW: Add onDelete closure to trigger deletion.
     let onDelete: () -> Void  // NEW
 
     private var lastSyncText: String {
@@ -1815,22 +1849,22 @@ struct LibraryGridCell: View {
         formatter.dateStyle = .short
         formatter.timeStyle = .short
         formatter.doesRelativeDateFormatting = true
-        guard let date = library.lastSyncedAt else { return "Never synced" }
+        guard let date = source.lastSyncedAt else { return "Never synced" }
         return "Last sync: \(formatter.string(from: date))"
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Image(systemName: libraryTypeIcon)
+                Image(systemName: sourceTypeIcon)
                     .font(.title)
-                    .foregroundColor(libraryTypeColor)
+                    .foregroundColor(sourceTypeColor)
 
                 VStack(alignment: .leading) {
                     Text(dirName)
                         .font(.headline)
                         .lineLimit(1)
-                    Text(library.dirPath)
+                    Text(source.dirPath)
                         .font(.caption)
                         .foregroundColor(.secondary)
                         .lineLimit(1)
@@ -1854,29 +1888,28 @@ struct LibraryGridCell: View {
         .padding()
         .background(Color(.tertiarySystemBackground))
         .cornerRadius(8)
-        // NEW: Add a context menu for deleting the library.
         .contextMenu {
             Button(role: .destructive) {
                 onDelete()  // NEW
             } label: {
-                Label("Delete Library", systemImage: "trash")
+                Label("Delete Source", systemImage: "trash")
             }
         }
     }
 
     private var dirName: String {
-        return makeURLFromString(library.dirPath).lastPathComponent
+        return makeURLFromString(source.dirPath).lastPathComponent
     }
 
-    private var libraryTypeIcon: String {
-        switch library.type {
+    private var sourceTypeIcon: String {
+        switch source.type {
         case .iCloud: return "icloud.fill"
         default: return "folder.fill"
         }
     }
 
-    private var libraryTypeColor: Color {
-        switch library.type {
+    private var sourceTypeColor: Color {
+        switch source.type {
         case .iCloud: return .blue
         default: return .gray
         }
@@ -1885,40 +1918,40 @@ struct LibraryGridCell: View {
 
 enum SyncViewState {
     case noICloud, isInitialising,
-        noLibraryDirSet, notSyncedYet,
+        noSourceDirSet, notSyncedYet,
         showTreeView, syncInProgress, unboundView
 }
 
 @MainActor
 class SyncViewModel: ObservableObject {
-    @Published var libraries: [Library] = []
+    @Published var sources: [Source] = []
     @Published var createdUser: User?
     @Published var errorMessage: String?
-    @Published var currentSyncLibraryId: Int64?
+    @Published var currentSyncSourceId: Int64?
 
     @Published var selectedFolderName: String? = nil
-    @Published var currentLibrary: Library?
+    @Published var currentSource: Source?
     @Published var isSyncing = false
     @Published var currentSyncedDir: String? = nil
 
     private let userCloudService: UserCloudService?
     private let icloudProvider: ICloudProvider?
-    let libraryService: LibraryService?
+    let sourceService: SourceService?
     let songImportService: SongImportService?
 
     init(
         userCloudService: UserCloudService?,
         icloudProvider: ICloudProvider?,
-        libraryService: LibraryService?,
+        sourceService: SourceService?,
         songImportService: SongImportService?
     ) {
         self.userCloudService = userCloudService
         self.icloudProvider = icloudProvider
-        self.libraryService = libraryService
+        self.sourceService = sourceService
         self.songImportService = songImportService
     }
 
-    func loadLibraries() {
+    func loadSources() {
         Task {
             do {
                 guard let currentUser = try await userCloudService?.resolveCurrentICloudUser()
@@ -1927,64 +1960,64 @@ class SyncViewModel: ObservableObject {
                     return
                 }
 
-                libraries =
-                    try await libraryService?.repository()
+                sources =
+                    try await sourceService?.repository()
                     .findOneByUserId(userId: currentUser.id ?? -1, path: nil) ?? []
             } catch {
                 errorMessage = error.localizedDescription
             }
         }
     }
-    func deleteLibrary(_ library: Library) {
+    func deleteSource(_ source: Source) {
         Task {
-            if let id = library.id {
+            if let id = source.id {
                 do {
-                    try await libraryService?.repository().deleteLibrary(libraryId: id)
-                    // Also, remove the library from the local list.
-                    libraries.removeAll { $0.id == id }
+                    try await sourceService?.repository().deleteSource(sourceId: id)
+                    // Also, remove the source from the local list.
+                    sources.removeAll { $0.id == id }
                 } catch {
-                    logger.error("Failed to delete library: \(error)")
+                    logger.error("Failed to delete source: \(error)")
                 }
             }
         }
     }
-    func createLibrary(path: String) {
+    func createSource(path: String) {
         Task {
             do {
                 guard let currentUser = try await userCloudService?.resolveCurrentICloudUser(),
-                    let service = libraryService
+                    let service = sourceService
                 else {
                     errorMessage = "User is not available"
-                    logger.error("failed to create library: user is not available")
+                    logger.error("failed to create source: user is not available")
                     return
                 }
 
-                let library = try await service.registerLibraryPath(
+                let source = try await service.registerSourcePath(
                     userId: currentUser.id ?? -1,
                     path: path,
                     type: .iCloud
                 )
-                logger.debug("library path \(path) is registered, now syncing...")
+                logger.debug("source path \(path) is registered, now syncing...")
 
-                libraries.append(library)
-                try await syncLibrary(library)
+                sources.append(source)
+                try await syncSource(source)
             } catch CustomError.genericError(let msg) {
                 errorMessage = msg
-                logger.error("failed to register or sync library: \(msg)")
+                logger.error("failed to register or sync source: \(msg)")
             } catch {
                 errorMessage = error.localizedDescription
-                logger.error("failed to register or sync library: \(error.localizedDescription)")
+                logger.error("failed to register or sync source: \(error.localizedDescription)")
             }
         }
     }
 
-    func resyncLibrary(_ library: Library) {
+    func resyncSource(_ source: Source) {
         Task {
             do {
-                try await syncLibrary(library)
-                loadLibraries()  // Refresh list
+                try await syncSource(source)
+                loadSources()  // Refresh list
             } catch CustomError.genericError(let msg) {
-                // TODO: Need to inform user to remove this library and re-add it
+                // TODO: Need to inform user to remove this source and re-add it
                 logger.error("loaded error: \(msg)")
                 errorMessage = msg
             } catch {
@@ -1994,31 +2027,31 @@ class SyncViewModel: ObservableObject {
         }
     }
 
-    private func syncLibrary(_ library: Library) async throws {
-        currentSyncLibraryId = library.id
-        defer { currentSyncLibraryId = nil }
+    private func syncSource(_ source: Source) async throws {
+        currentSyncSourceId = source.id
+        defer { currentSyncSourceId = nil }
 
-        guard let libraryId = library.id else {
-            throw CustomError.genericError("Invalid library ID")
+        guard let sourceId = source.id else {
+            throw CustomError.genericError("Invalid source ID")
         }
 
-        let folderURL = try resolveLibraryURL(library)
-        let updatedLibrary = try await libraryService?.syncService().syncDir(
-            libraryId: libraryId,
+        let folderURL = try resolveSourceURL(source)
+        let updatedSource = try await sourceService?.syncService().syncDir(
+            sourceId: sourceId,
             folderURL: folderURL,
             onCurrentURL: { _ in },
             onSetLoading: { _ in }
         )
 
-        if let updated = updatedLibrary {
-            if let index = libraries.firstIndex(where: { $0.id == library.id }) {
-                libraries[index] = updated
+        if let updated = updatedSource {
+            if let index = sources.firstIndex(where: { $0.id == source.id }) {
+                sources[index] = updated
             }
         }
     }
 
-    private func resolveLibraryURL(_ library: Library) throws -> URL {
-        let folderURL = makeURLFromString(library.dirPath)
+    private func resolveSourceURL(_ source: Source) throws -> URL {
+        let folderURL = makeURLFromString(source.dirPath)
         let bookmarkKey = makeBookmarkKey(folderURL)
         logger.debug("Loading bookmark key \(bookmarkKey) of \(folderURL.absoluteString)")
         guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
@@ -2039,13 +2072,13 @@ class SyncViewModel: ObservableObject {
             return .noICloud
         } else if hasICloud() && (createdUser == nil && errorMessage == nil) {
             return .isInitialising
-        } else if createdUser != nil && currentLibrary == nil {
-            return .noLibraryDirSet
-        } else if createdUser != nil && currentLibrary != nil && currentLibrary?.lastSyncedAt == nil
+        } else if createdUser != nil && currentSource == nil {
+            return .noSourceDirSet
+        } else if createdUser != nil && currentSource != nil && currentSource?.lastSyncedAt == nil
             && !isSyncing
         {
             return .notSyncedYet
-        } else if createdUser != nil && currentLibrary != nil && currentLibrary?.lastSyncedAt != nil
+        } else if createdUser != nil && currentSource != nil && currentSource?.lastSyncedAt != nil
             && !isSyncing
         {
             return .showTreeView
@@ -2062,17 +2095,17 @@ class SyncViewModel: ObservableObject {
             logger.debug("registering \(path)")
             do {
                 if let currentUser = self.createdUser {
-                    let lib = try await libraryService?.registerLibraryPath(
+                    let lib = try await sourceService?.registerSourcePath(
                         userId: currentUser.id!, path: path, type: .iCloud)
                     let libId = lib?.id ?? -1
-                    logger.debug("created library \(libId)")
-                    self.currentLibrary = lib
+                    logger.debug("created source \(libId)")
+                    self.currentSource = lib
                 }
             } catch {
                 logger.debug("failed to register lib \(error.localizedDescription)")
             }
 
-            logger.debug("library is set...")
+            logger.debug("source is set...")
         }
     }
 
@@ -2096,15 +2129,15 @@ class SyncViewModel: ObservableObject {
     func sync() {
         Task {
             self.isSyncing = true
-            var currentLib = self.currentLibrary
+            var currentSrc = self.currentSource
             do {
                 // Start syncing with updates
-                let folderPath = currentLibrary?.dirPath
-                let libraryId = currentLibrary?.id
+                let folderPath = currentSource?.dirPath
+                let sourceId = currentSource?.id
                 logger.debug("started syncing...")
-                if folderPath != nil && libraryId != nil {
-                    let result = try await libraryService?.syncService().syncDir(
-                        libraryId: libraryId!, folderURL: makeURLFromString(folderPath!),
+                if folderPath != nil && sourceId != nil {
+                    let result = try await sourceService?.syncService().syncDir(
+                        sourceId: sourceId!, folderURL: makeURLFromString(folderPath!),
                         onCurrentURL: { url in
                             DispatchQueue.main.async {
                                 self.currentSyncedDir = url?.absoluteString
@@ -2116,24 +2149,24 @@ class SyncViewModel: ObservableObject {
                                 self.isSyncing = loading
                             }
                         })
-                    currentLib?.totalPaths = result?.totalPaths
+                    currentSrc?.totalPaths = result?.totalPaths
                 } else {
                     logger.error("failed to sync")
                 }
                 self.isSyncing = false
-                currentLib?.lastSyncedAt = Date()
-                currentLib = try await libraryService?.repository().updateLibrary(
-                    library: currentLib!)
+                currentSrc?.lastSyncedAt = Date()
+                currentSrc = try await sourceService?.repository().updateSource(
+                    source: currentSrc!)
                 logger.debug("finished syncing...")
-                self.currentLibrary = currentLib
+                self.currentSource = currentSrc
             } catch {
                 self.isSyncing = false
-                currentLib?.lastSyncedAt = Date()
-                currentLib?.syncError = error.localizedDescription
-                currentLib = try await libraryService?.repository().updateLibrary(
-                    library: currentLib!)
+                currentSrc?.lastSyncedAt = Date()
+                currentSrc?.syncError = error.localizedDescription
+                currentSrc = try await sourceService?.repository().updateSource(
+                    source: currentSrc!)
                 logger.debug("finished with error")
-                self.currentLibrary = currentLib
+                self.currentSource = currentSrc
             }
         }
     }
@@ -2152,12 +2185,12 @@ class SyncViewModel: ObservableObject {
                 let user = try await userCloudService?.resolveCurrentICloudUser()
                 self.createdUser = user
                 if let user = user {
-                    self.currentLibrary = try await libraryService?.getCurrentLibrary(
+                    self.currentSource = try await sourceService?.getCurrentSource(
                         userId: user.id!)
-                    self.selectedFolderName = self.currentLibrary?.dirPath
-                    let id = self.currentLibrary?.id ?? -1
-                    let path = self.currentLibrary?.dirPath ?? ""
-                    logger.debug("library \(id), path: \(path)")
+                    self.selectedFolderName = self.currentSource?.dirPath
+                    let id = self.currentSource?.id ?? -1
+                    let path = self.currentSource?.dirPath ?? ""
+                    logger.debug("source \(id), path: \(path)")
                 }
             } catch {
                 self.errorMessage = error.localizedDescription
