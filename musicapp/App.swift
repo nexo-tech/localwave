@@ -98,7 +98,7 @@ struct Album: Identifiable, Hashable {
 }
 
 /// Example song model, no libraryId. We store all metadata ourselves.
-struct Song: Sendable {
+struct Song: Sendable, Identifiable, Equatable {
     let id: Int64?
 
     /// A unique-ish hash of (artist, title, album).
@@ -136,6 +136,11 @@ struct Song: Sendable {
             updatedAt: updatedAt
         )
     }
+
+    static func == (lhs: Song, rhs: Song) -> Bool {
+        return lhs.id == rhs.id
+    }
+
     var uniqueId: Int64 {
         return id ?? songKey
     }
@@ -2242,14 +2247,16 @@ actor SQLitePlaylistRepository: PlaylistRepository {
     private let colName: SQLite.Expression<String>
     private let colCreatedAt: SQLite.Expression<Date>
     private let colUpdatedAt: SQLite.Expression<Date?>
+    private let logger = Logger(subsystem: subsystem, category: "SQLitePlaylistRepository")
 
     init(db: Connection) throws {
         self.db = db
-
+        // Column definitions
         let colId = SQLite.Expression<Int64>("id")
         let colName = SQLite.Expression<String>("name")
         let colCreatedAt = SQLite.Expression<Date>("createdAt")
         let colUpdatedAt = SQLite.Expression<Date?>("updatedAt")
+
         try db.run(
             table.create(ifNotExists: true) { t in
                 t.column(colId, primaryKey: .autoincrement)
@@ -2257,13 +2264,14 @@ actor SQLitePlaylistRepository: PlaylistRepository {
                 t.column(colCreatedAt)
                 t.column(colUpdatedAt)
             })
+
         self.colId = colId
         self.colName = colName
         self.colCreatedAt = colCreatedAt
         self.colUpdatedAt = colUpdatedAt
     }
 
-    func create(playlist: Playlist) throws -> Playlist {
+    func create(playlist: Playlist) async throws -> Playlist {
         let insert = table.insert(
             colName <- playlist.name,
             colCreatedAt <- playlist.createdAt,
@@ -2275,9 +2283,56 @@ actor SQLitePlaylistRepository: PlaylistRepository {
             updatedAt: playlist.updatedAt)
     }
 
-    // Implement other methods...
+    func update(playlist: Playlist) async throws -> Playlist {
+        guard let playlistId = playlist.id else {
+            throw CustomError.genericError("Cannot update playlist without ID")
+        }
+
+        let query = table.filter(colId == playlistId)
+        try db.run(
+            query.update(
+                colName <- playlist.name,
+                colUpdatedAt <- Date()
+            ))
+
+        return Playlist(
+            id: playlistId,
+            name: playlist.name,
+            createdAt: playlist.createdAt,
+            updatedAt: Date()
+        )
+    }
+
+    func delete(playlistId: Int64) async throws {
+        let query = table.filter(colId == playlistId)
+        try db.run(query.delete())
+    }
+
+    func getAll() async throws -> [Playlist] {
+        try db.prepare(table).map { row in
+            Playlist(
+                id: row[colId],
+                name: row[colName],
+                createdAt: row[colCreatedAt],
+                updatedAt: row[colUpdatedAt]
+            )
+        }
+    }
+
+    func getOne(id: Int64) async throws -> Playlist? {
+        let query = table.filter(colId == id)
+        return try db.pluck(query).map { row in
+            Playlist(
+                id: row[colId],
+                name: row[colName],
+                createdAt: row[colCreatedAt],
+                updatedAt: row[colUpdatedAt]
+            )
+        }
+    }
 }
 
+// MARK: - Complete SQLitePlaylistSongRepository implementation
 actor SQLitePlaylistSongRepository: PlaylistSongRepository {
     private let db: Connection
     private let table = Table("playlist_songs")
@@ -2285,10 +2340,11 @@ actor SQLitePlaylistSongRepository: PlaylistSongRepository {
     private let colPlaylistId: SQLite.Expression<Int64>
     private let colSongId: SQLite.Expression<Int64>
     private let colPosition: SQLite.Expression<Int>
+    private let logger = Logger(subsystem: subsystem, category: "SQLitePlaylistSongRepository")
 
     init(db: Connection) throws {
         self.db = db
-
+        // Column definitions
         let colId = SQLite.Expression<Int64>("id")
         let colPlaylistId = SQLite.Expression<Int64>("playlistId")
         let colSongId = SQLite.Expression<Int64>("songId")
@@ -2300,6 +2356,7 @@ actor SQLitePlaylistSongRepository: PlaylistSongRepository {
                 t.column(colPlaylistId)
                 t.column(colSongId)
                 t.column(colPosition)
+                t.unique(colPlaylistId, colSongId)  // Prevent duplicates
             })
 
         self.colId = colId
@@ -2309,6 +2366,7 @@ actor SQLitePlaylistSongRepository: PlaylistSongRepository {
     }
 
     func addSong(playlistId: Int64, songId: Int64) async throws {
+        // Get current max position
         let maxPosition =
             try db.scalar(
                 table.filter(colPlaylistId == playlistId)
@@ -2323,7 +2381,56 @@ actor SQLitePlaylistSongRepository: PlaylistSongRepository {
         try db.run(insert)
     }
 
-    // Implement other methods...
+    func removeSong(playlistId: Int64, songId: Int64) async throws {
+        let query = table.filter(colPlaylistId == playlistId && colSongId == songId)
+        try db.run(query.delete())
+    }
+
+    func getSongs(playlistId: Int64) async throws -> [Song] {
+        let songsTable = Table("songs")
+        let songIdCol = SQLite.Expression<Int64>("id")
+
+        return try db.prepare(
+            table
+                .join(songsTable, on: songsTable[songIdCol] == table[colSongId])
+                .filter(colPlaylistId == playlistId)
+                .order(colPosition.asc)
+        ).map { row in
+            Song(
+                id: row[songsTable[songIdCol]],
+                songKey: row[songsTable[Expression<Int64>("songKey")]],
+                artist: row[songsTable[Expression<String>("artist")]],
+                title: row[songsTable[Expression<String>("title")]],
+                album: row[songsTable[Expression<String>("album")]],
+                trackNumber: row[songsTable[Expression<Int?>("trackNumber")]],
+                coverArtPath: row[songsTable[Expression<String?>("coverArtPath")]],
+                bookmark: (row[songsTable[SQLite.Expression<Blob?>("bookmark")]]?.bytes).map {
+                    Data($0)
+                },
+                pathHash: row[songsTable[Expression<Int64>("pathHash")]],
+                createdAt: Date(
+                    timeIntervalSince1970: row[songsTable[Expression<Double>("createdAt")]]),
+                updatedAt: row[songsTable[Expression<Double?>("updatedAt")]].map(
+                    Date.init(timeIntervalSince1970:))
+            )
+        }
+    }
+
+    func reorderSongs(playlistId: Int64, newOrder: [Int64]) async throws {
+        try db.transaction {
+            // Clear existing positions
+            try db.run(table.filter(colPlaylistId == playlistId).update(colPosition <- -1))
+
+            // Update with new positions
+            for (index, songId) in newOrder.enumerated() {
+                let query = table.filter(colPlaylistId == playlistId && colSongId == songId)
+                try db.run(query.update(colPosition <- index))
+            }
+
+            // Cleanup any invalid entries (shouldn't be necessary)
+            try db.run(table.filter(colPlaylistId == playlistId && colPosition == -1).delete())
+        }
+    }
 }
 
 @MainActor
@@ -2335,6 +2442,10 @@ class DependencyContainer: ObservableObject {
     let songRepository: SongRepository
     let songImportService: SongImportService
     let playerPersistenceService: PlayerPersistenceService
+    let playlistRepo: PlaylistRepository
+    let playlistSongRepo: PlaylistSongRepository
+
+    @Published var libraryBrowseViewModels: [Int64: LibraryBrowseViewModel] = [:]
 
     init() throws {
         guard let db = setupSQLiteConnection(dbName: "musicApp\(schemaVersion).sqlite") else {
@@ -2372,6 +2483,8 @@ class DependencyContainer: ObservableObject {
             libraryPathRepo: libraryPathRepo,
             libraryRepo: libraryRepo)
         self.playerPersistenceService = DefaultPlayerPersistenceService(songRepo: songRepo)
+        self.playlistRepo = try SQLitePlaylistRepository(db: db)
+        self.playlistSongRepo = try SQLitePlaylistSongRepository(db: db)
     }
 
     func makeSongListViewModel(filter: SongListViewModel.Filter) -> SongListViewModel {
@@ -2384,6 +2497,14 @@ class DependencyContainer: ObservableObject {
 
     func makeAlbumListViewModel() -> AlbumListViewModel {
         AlbumListViewModel(songRepo: songRepository)
+    }
+
+    func makePlaylistListViewModel() -> PlaylistListViewModel {
+        PlaylistListViewModel(
+            playlistRepo: playlistRepo,
+            playlistSongRepo: playlistSongRepo,
+            songRepo: songRepository
+        )
     }
 
     func makeSyncViewModel() -> SyncViewModel {

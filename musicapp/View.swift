@@ -318,13 +318,12 @@ class SongListViewModel: ObservableObject {
     func loadMoreSongs() async {
         guard !isLoadingPage && hasMorePages else { return }
         isLoadingPage = true
-        defer { isLoadingPage = false }  // NEW: Ensure we always reset loading state
+        defer { isLoadingPage = false }
 
         do {
             let newSongs = try await loadFilteredSongs()
             let received = newSongs.count
 
-            // NEW: More accurate hasMorePages calculation
             hasMorePages = received >= pageSize
 
             if case .album = filter {
@@ -351,7 +350,7 @@ class SongListViewModel: ObservableObject {
 
     func searchSongs(query: String) async {
         currentQuery = query
-        reset()  // NEW: Use reset instead of manual reset
+        reset()
         await loadTotalSongs()
 
         do {
@@ -506,7 +505,7 @@ struct SongListView: View {
 }
 
 struct MiniPlayerView: View {
-    @EnvironmentObject private var playerVM: PlayerViewModel  // NEW: Use EnvironmentObject
+    @EnvironmentObject private var playerVM: PlayerViewModel
     var onTap: () -> Void
 
     var body: some View {
@@ -521,6 +520,32 @@ func coverArt(of song: Song) -> UIImage? {
     let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
     let coverURL = docs.appendingPathComponent(coverArtPath)
     return UIImage(contentsOfFile: coverURL.path)
+}
+
+struct SelectableSongRow: View {
+    let song: Song
+    let isSelected: Bool
+    let onToggle: () -> Void
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(song.title)
+                    .font(.headline)
+                Text(song.artist)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .foregroundColor(isSelected ? .blue : .gray)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onToggle()
+        }
+        .padding(.vertical, 4)
+    }
 }
 
 @MainActor
@@ -702,7 +727,19 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         }
 
         guard url.startAccessingSecurityScopedResource() else {
-            logger.error("Failed to start accessing security scoped resource")
+            logger.error(
+                "Failed to start accessing security scoped resource for song: \(song.title)")
+            do {
+                let newBookmark = try url.bookmarkData(options: [])
+                logger.warning("Renewed bookmark for song: \(song.title)")
+                var updatedSong = song
+                updatedSong.bookmark = newBookmark
+                Task {
+                    _ = try await songRepo?.upsertSong(updatedSong)
+                }
+            } catch {
+                logger.error("Failed to renew bookmark: \(error)")
+            }
             return
         }
         activeSecurityScopedURLs.append(url)
@@ -755,7 +792,6 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         playbackProgress = 0
         stopTimer()
 
-        // NEW: Release security access when done
         if let url = player?.url {
             url.stopAccessingSecurityScopedResource()
         }
@@ -836,7 +872,6 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale)
 
-            // NEW: Renew bookmark if stale (log warning since we can't update DB here)
             if isStale {
                 let newBookmark = try url.bookmarkData(options: [])
                 logger.warning("Bookmark was stale - consider reimporting this file")
@@ -858,7 +893,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 }
 
 struct PlayerView: View {
-    @EnvironmentObject private var playerVM: PlayerViewModel  // NEW: Use EnvironmentObject
+    @EnvironmentObject private var playerVM: PlayerViewModel
     @State private var editingProgress: Double?
     @Environment(\.dismiss) private var dismiss
 
@@ -919,7 +954,7 @@ struct PlayerView: View {
 
     private func controlsView() -> some View {
         VStack {
-            // NEW: Volume control
+
             HStack {
                 Image(systemName: "speaker.fill")
                 Slider(value: $playerVM.volume, in: 0...1)
@@ -1057,7 +1092,6 @@ struct ArtistListView: View {
         }
     }
 
-    // NEW: Empty state view
     private var emptyStateView: some View {
         VStack(spacing: 20) {
             Image(systemName: "person.2.slash")
@@ -1157,7 +1191,6 @@ struct AlbumGridView: View {
         }
     }
 
-    // NEW: Empty state view
     private var emptyStateView: some View {
         VStack(spacing: 20) {
             Image(systemName: "square.stack.slash")
@@ -1271,6 +1304,10 @@ struct LibraryView: View {
         NavigationStack {
             List {
                 NavigationLink(
+                    "Playlists",
+                    destination: PlaylistListView(
+                        viewModel: dependencies.makePlaylistListViewModel()))
+                NavigationLink(
                     "Artists",
                     destination: ArtistListView(dependencies: dependencies, viewModel: artistVM))
                 NavigationLink(
@@ -1366,27 +1403,43 @@ struct LibraryBrowseView: View {
     let parentPathId: Int64?
     let libraryImportService: LibraryImportService?
     let songImportService: SongImportService?
+    @StateObject var viewModel: LibraryBrowseViewModel  // NEW: now passed in
 
     init(
         libraryId: Int64,
         parentPathId: Int64?,
         libraryImportService: LibraryImportService?,
-        songImportService: SongImportService?
+        songImportService: SongImportService?,
+        viewModel: LibraryBrowseViewModel? = nil  // NEW
+
     ) {
         self.libraryId = libraryId
         self.parentPathId = parentPathId
         self.libraryImportService = libraryImportService
         self.songImportService = songImportService
+        if let vm = viewModel {
+            _viewModel = StateObject(wrappedValue: vm)
+        } else {
+            _viewModel = StateObject(
+                wrappedValue: LibraryBrowseViewModel(
+                    service: libraryImportService!,
+                    libraryId: libraryId,
+                    initialParentPathId: parentPathId
+                ))
+        }
     }
 
     var body: some View {
-        if let service = libraryImportService, let importService = songImportService {
-            LibraryBrowseViewInternal(
-                libraryId: libraryId,
-                parentPathId: parentPathId,
-                libraryImportService: service,
-                songImportService: importService
-            )
+        if let service: any LibraryImportService = libraryImportService, let importService = songImportService {
+            NavigationStack {
+                // The LibraryBrowseViewInternal (which lists files/folders) remains unchanged.
+                LibraryBrowseViewInternal(
+                    libraryId: libraryId,
+                    parentPathId: parentPathId,
+                    libraryImportService: service,
+                    songImportService: importService
+                )
+            }
         } else {
             Text("Services not available")
                 .foregroundColor(.red)
@@ -1603,26 +1656,50 @@ struct SyncView: View {
     @State private var showingFolderPicker = false
     private let logger = Logger(subsystem: subsystem, category: "SyncView")
     @StateObject private var syncViewModel: SyncViewModel
-
+    private var dependencies: DependencyContainer
     init(dependencies: DependencyContainer) {
         _syncViewModel = StateObject(wrappedValue: dependencies.makeSyncViewModel())
+        self.dependencies = dependencies
     }
 
     var body: some View {
         NavigationStack {
-            Group {
+            if syncViewModel.libraries.count == 1,
+                let singleLibrary = syncViewModel.libraries.first,
+                let libraryId = singleLibrary.id
+            {
+                // NEW: Automatically open the single library’s browse view.
+                let browseVM =
+                    (dependencies.libraryBrowseViewModels[libraryId]
+                        ?? LibraryBrowseViewModel(
+                            service: syncViewModel.libraryService!.importService(),
+                            libraryId: libraryId,
+                            initialParentPathId: singleLibrary.pathId
+                        ))
+                LibraryBrowseView(
+                    libraryId: libraryId,
+                    parentPathId: singleLibrary.pathId,
+                    libraryImportService: syncViewModel.libraryService?.importService(),
+                    songImportService: syncViewModel.songImportService,
+                    viewModel: browseVM  // NEW: pass the persisted view model
+                ).onAppear {  
+                // Store the instance so it’s reused.
+                DispatchQueue.main.async {
+                    dependencies.libraryBrowseViewModels[libraryId] = browseVM
+                }
+                }
+            } else {
                 libraryGridView
             }
-            .navigationTitle("Music Libraries")
-            .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        showingFolderPicker = true
-                    } label: {
-                        Image(systemName: "plus")
-                    }
+
+        }
+        .navigationTitle("Music Libraries")
+        .toolbar {
+                Button {
+                    showingFolderPicker = true
+                } label: {
+                    Image(systemName: "plus")
                 }
-            }
         }
         .fileImporter(
             isPresented: $showingFolderPicker,
@@ -1635,19 +1712,33 @@ struct SyncView: View {
             syncViewModel.loadLibraries()
         }
     }
-
+    // In SyncView’s libraryGridView ForEach, update LibraryGridCell creation to include onDelete: // NEW
     private var libraryGridView: some View {
         ScrollView {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 20)], spacing: 20) {
                 ForEach(syncViewModel.libraries, id: \.stableId) { (library: Library) in
                     NavigationLink {
                         if let libraryId = library.id {
+                            // NEW: When navigating, try to reuse a persisted LibraryBrowseViewModel.
+                            let browseVM =
+                                (dependencies.libraryBrowseViewModels[libraryId]
+                                    ?? LibraryBrowseViewModel(
+                                        service: syncViewModel.libraryService!.importService(),
+                                        libraryId: libraryId,
+                                        initialParentPathId: library.pathId
+                                    ))
+
                             LibraryBrowseView(
                                 libraryId: libraryId,
                                 parentPathId: library.pathId,
                                 libraryImportService: syncViewModel.libraryService?.importService(),
-                                songImportService: syncViewModel.songImportService
-                            )
+                                songImportService: syncViewModel.songImportService,
+                                viewModel: browseVM  // NEW
+                            ).onAppear {
+                                DispatchQueue.main.async {
+                                    dependencies.libraryBrowseViewModels[libraryId] = browseVM
+                                }
+                            }
                         }
                     } label: {
                         LibraryGridCell(
@@ -1658,6 +1749,10 @@ struct SyncView: View {
                                     "resyncing library: \(library.id ?? -1), path: \(library.dirPath)"
                                 )
                                 syncViewModel.resyncLibrary(library)
+                            },
+                            onDelete: {
+                                // NEW: Delete the library (and its associated paths) via syncViewModel.
+                                syncViewModel.deleteLibrary(library)  // NEW; see next change for deleteLibrary implementation
                             }
                         )
                         .padding()
@@ -1707,12 +1802,15 @@ struct SyncView: View {
     }
 }
 
+// In LibraryGridCell, add a context menu for deletion: // NEW
 struct LibraryGridCell: View {
     let library: Library
     let isSyncing: Bool
     let onResync: () -> Void
+    // NEW: Add onDelete closure to trigger deletion.
+    let onDelete: () -> Void  // NEW
+
     private var lastSyncText: String {
-        // NEW: Handle potential time zone issues
         let formatter = DateFormatter()
         formatter.dateStyle = .short
         formatter.timeStyle = .short
@@ -1756,6 +1854,14 @@ struct LibraryGridCell: View {
         .padding()
         .background(Color(.tertiarySystemBackground))
         .cornerRadius(8)
+        // NEW: Add a context menu for deleting the library.
+        .contextMenu {
+            Button(role: .destructive) {
+                onDelete()  // NEW
+            } label: {
+                Label("Delete Library", systemImage: "trash")
+            }
+        }
     }
 
     private var dirName: String {
@@ -1829,7 +1935,19 @@ class SyncViewModel: ObservableObject {
             }
         }
     }
-
+    func deleteLibrary(_ library: Library) {
+        Task {
+            if let id = library.id {
+                do {
+                    try await libraryService?.repository().deleteLibrary(libraryId: id)
+                    // Also, remove the library from the local list.
+                    libraries.removeAll { $0.id == id }
+                } catch {
+                    logger.error("Failed to delete library: \(error)")
+                }
+            }
+        }
+    }
     func createLibrary(path: String) {
         Task {
             do {
@@ -1892,7 +2010,6 @@ class SyncViewModel: ObservableObject {
             onSetLoading: { _ in }
         )
 
-        // NEW: Update the library in our local state
         if let updated = updatedLibrary {
             if let index = libraries.firstIndex(where: { $0.id == library.id }) {
                 libraries[index] = updated
@@ -1966,7 +2083,7 @@ class SyncViewModel: ObservableObject {
         }
         defer { folderURL.stopAccessingSecurityScopedResource() }
         let bookmarkKey = makeBookmarkKey(folderURL)
-        // NEW: Include security scope options for directory bookmark
+
         let bookmarkData = try folderURL.bookmarkData(
             options: [],
             includingResourceValuesForKeys: nil,
@@ -2098,6 +2215,238 @@ extension View {
     }
 }
 
+@MainActor
+class PlaylistListViewModel: ObservableObject {
+    @Published var playlists: [Playlist] = []
+    @Published var showingCreateDialog = false
+    @Published var newPlaylistName = ""
+
+    let playlistRepo: PlaylistRepository
+    let playlistSongRepo: PlaylistSongRepository
+    let songRepo: SongRepository
+
+    private let logger = Logger(subsystem: subsystem, category: "PlaylistListViewModel")
+
+    init(
+        playlistRepo: PlaylistRepository,
+        playlistSongRepo: PlaylistSongRepository,
+        songRepo: SongRepository
+    ) {
+        self.playlistRepo = playlistRepo
+        self.playlistSongRepo = playlistSongRepo
+        self.songRepo = songRepo
+    }
+
+    func loadPlaylists() async {
+        playlists = (try? await playlistRepo.getAll()) ?? []
+    }
+
+    // NEW: Function to delete playlists.
+    func deletePlaylist(at offsets: IndexSet) async {
+        for index in offsets {
+            let playlist = playlists[index]
+            if let id = playlist.id {
+                do {
+                    try await playlistRepo.delete(playlistId: id)  // NEW: Use delete method from repository
+                } catch {
+                    // Log or handle error as needed.
+                    logger.debug("failed to delete song with id: \(id)")
+                }
+            }
+        }
+        await loadPlaylists()
+    }
+
+    func createPlaylist() async {
+        guard !newPlaylistName.isEmpty else { return }
+        let playlist = Playlist(id: nil, name: newPlaylistName, createdAt: Date(), updatedAt: nil)
+        if let created = try? await playlistRepo.create(playlist: playlist) {
+            playlists.append(created)
+            newPlaylistName = ""
+            showingCreateDialog = false
+        }
+    }
+}
+
+@MainActor
+class PlaylistDetailViewModel: ObservableObject {
+    @Published var songs: [Song] = []
+    @Published var showAddSongs = false
+    @Published var selectedSongs = Set<Int64>()
+
+    let playlist: Playlist
+    let playlistSongRepo: PlaylistSongRepository
+    let songRepo: SongRepository
+
+    init(playlist: Playlist, playlistSongRepo: PlaylistSongRepository, songRepo: SongRepository) {
+        self.playlist = playlist
+        self.playlistSongRepo = playlistSongRepo
+        self.songRepo = songRepo
+    }
+
+    func loadSongs() async {
+        songs = (try? await playlistSongRepo.getSongs(playlistId: playlist.id!)) ?? []
+    }
+
+    func deleteSong(at offsets: IndexSet) async {
+        guard let playlistId = playlist.id else { return }
+        for index in offsets {
+            let songId = songs[index].id!
+            try? await playlistSongRepo.removeSong(playlistId: playlistId, songId: songId)
+        }
+        await loadSongs()
+    }
+
+    func reorderSongs(from source: IndexSet, to destination: Int) async {
+        var updatedSongs = songs
+        updatedSongs.move(fromOffsets: source, toOffset: destination)
+
+        let newOrder = updatedSongs.map { $0.id! }
+        try? await playlistSongRepo.reorderSongs(playlistId: playlist.id!, newOrder: newOrder)
+        await loadSongs()
+    }
+}
+
+// New Views
+struct PlaylistListView: View {
+    @ObservedObject var viewModel: PlaylistListViewModel
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(viewModel.playlists) { playlist in
+                    NavigationLink {
+                        PlaylistDetailView(
+                            playlist: playlist,
+                            viewModel: PlaylistDetailViewModel(
+                                playlist: playlist,
+                                playlistSongRepo: viewModel.playlistSongRepo,
+                                songRepo: viewModel.songRepo
+                            )
+                        )
+                    } label: {
+                        Text(playlist.name)
+                            .font(.headline)
+                    }
+                }
+                .onDelete { offsets in  // NEW: Handle deletion of playlists.
+                    Task { await viewModel.deletePlaylist(at: offsets) }  // NEW
+                }
+            }
+            .toolbar {
+                Button {
+                    viewModel.showingCreateDialog = true
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+            .alert("New Playlist", isPresented: $viewModel.showingCreateDialog) {
+                TextField("Name", text: $viewModel.newPlaylistName)
+                Button("Create", action: { Task { await viewModel.createPlaylist() } })
+                Button("Cancel", role: .cancel) {}
+            }
+            .navigationTitle("Playlists")
+        }
+        .onAppear { Task { await viewModel.loadPlaylists() } }
+    }
+}
+
+struct PlaylistDetailView: View {
+    let playlist: Playlist
+    @ObservedObject var viewModel: PlaylistDetailViewModel
+    @EnvironmentObject var playerVM: PlayerViewModel
+
+    var body: some View {
+        List {
+            ForEach(viewModel.songs) { song in
+                SongRow(song: song) {
+                    playerVM.configureQueue(
+                        songs: viewModel.songs, startIndex: viewModel.songs.firstIndex(of: song)!)
+                    playerVM.playSong(song)
+                }
+            }
+            .onDelete(perform: { offsets in
+                Task { await viewModel.deleteSong(at: offsets) }
+            })
+            .onMove(perform: { from, to in
+                Task { await viewModel.reorderSongs(from: from, to: to) }
+            })
+        }
+        .toolbar {
+            ToolbarItemGroup(placement: .navigationBarTrailing) {
+                Button("Add Songs") {
+                    viewModel.showAddSongs = true
+                }
+
+                EditButton()
+            }
+        }
+        .sheet(isPresented: $viewModel.showAddSongs) {
+            SongSelectionView(
+                songRepo: viewModel.songRepo,
+                onSongsSelected: { selected in
+                    Task {
+                        guard let playlistId = playlist.id else { return }
+                        for song in selected {
+                            try? await viewModel.playlistSongRepo.addSong(
+                                playlistId: playlistId,
+                                songId: song.id!
+                            )
+                        }
+                        await viewModel.loadSongs()
+                    }
+                }
+            )
+        }
+        .navigationTitle(playlist.name)
+        .onAppear { Task { await viewModel.loadSongs() } }
+    }
+}
+
+struct SongSelectionView: View {
+    let songRepo: SongRepository
+    let onSongsSelected: ([Song]) -> Void
+    @State private var selectedSongs = Set<Int64>()
+    @StateObject private var songListVM: SongListViewModel
+
+    init(songRepo: SongRepository, onSongsSelected: @escaping ([Song]) -> Void) {
+        self.songRepo = songRepo
+        self.onSongsSelected = onSongsSelected
+        _songListVM = StateObject(
+            wrappedValue: SongListViewModel(
+                songRepo: songRepo,
+                filter: .all
+            )
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(songListVM.songs, id: \.uniqueId) { song in
+                SelectableSongRow(
+                    song: song,
+                    isSelected: selectedSongs.contains(song.id ?? -1)
+                ) {
+                    if selectedSongs.contains(song.id ?? -1) {
+                        selectedSongs.remove(song.id ?? -1)
+                    } else {
+                        selectedSongs.insert(song.id ?? -1)
+                    }
+                }
+            }
+            .toolbar {
+                Button("Add") {
+                    let songsToAdd = songListVM.songs.filter { selectedSongs.contains($0.id ?? -1) }
+                    onSongsSelected(songsToAdd)
+                }
+            }
+            .onAppear {
+                Task { await songListVM.loadInitialSongs() }
+            }
+        }
+    }
+}
+
 @main
 struct musicappApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
@@ -2124,7 +2473,5 @@ struct musicappApp: App {
                 .environmentObject(playerVM)
                 .applyTheme()
         }
-        //        .defaultSize(width: 600, height: 600) // Default window size
-
     }
 }
