@@ -6,7 +6,7 @@ import os
 
 /// subsystem used in logs
 let subsystem = "com.snowbear.musicapp"
-let schemaVersion = 27
+let schemaVersion = 28
 
 enum CustomError: Error {
     case genericError(_ message: String)
@@ -1029,7 +1029,7 @@ actor DefaultSourceSyncService: SourceSyncService {
         var audioURLs: [SourceSyncResultItem] = []
         var result = [String: SourceSyncResultItem]()
         let bookmarkKey = makeBookmarkKey(folderURL)
-        let audioExtensions = ["mp3", "wav", "m4a", "flac", "aac"]
+        let audioExtensions = ["mp3", "wav", "m4a", "flac", "aac", "aiff", "aif"]
         guard let bookmarkData = UserDefaults.standard.data(forKey: bookmarkKey) else {
             throw CustomError.genericError("no bookmark found, pick folder")
         }

@@ -59,25 +59,26 @@ class TabState: ObservableObject {
 struct CustomTabView: View {
     @Binding var selection: Int
     let tabs: [TabItem]
-
+    
+    // NEW: Updated initializer to accept a trailing closure with @TabItemBuilder
     init(selection: Binding<Int>, @TabItemBuilder content: () -> [TabItem]) {
         self._selection = selection
         self.tabs = content()
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            // Main content
-            tabs[selection].content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // Custom tab bar
+        ZStack {
+            ForEach(tabs.indices, id: \.self) { index in
+                tabs[index].content
+                    .opacity(selection == index ? 1 : 0)
+            }
+        }
+        .overlay(
+            // Your custom tab bar remains the same…
             HStack {
                 ForEach(tabs.indices, id: \.self) { index in
                     Button(action: {
-                        withAnimation {
-                            selection = index
-                        }
+                        withAnimation { selection = index }
                     }) {
                         VStack(spacing: 4) {
                             Image(systemName: tabs[index].systemImage)
@@ -92,8 +93,9 @@ struct CustomTabView: View {
             }
             .padding(.top)
             .frame(height: 60)
-            .background(.thinMaterial)
-        }
+            .background(.thinMaterial),
+            alignment: .bottom
+        )
     }
 }
 
@@ -148,14 +150,18 @@ struct MainTabView: View {
     @EnvironmentObject private var tabState: TabState
     @EnvironmentObject private var playerVM: PlayerViewModel
     @State private var isPlayerPresented = false
+    @StateObject private var libraryNavigation = LibraryNavigation()
 
     var body: some View {
-        ZStack(alignment: .bottom) {
+        print(libraryNavigation.path)
+
+        return ZStack(alignment: .bottom) {
             CustomTabView(selection: $tabState.selectedTab) {
                 TabItem(label: "Library", systemImage: "books.vertical", tag: 0) {
                     LibraryView(dependencies: dependencies)
+                        .environmentObject(libraryNavigation)
                 }
-                TabItem(label: "Sync", systemImage: "icloud.and.arrow.down", tag: 2) {
+                TabItem(label: "Sync", systemImage: "icloud.and.arrow.down", tag: 1) {
                     SyncView(dependencies: dependencies)
                 }
             }
@@ -494,7 +500,7 @@ struct SongListView: View {
 
             if searchText.isEmpty {
                 Button("Add Source") {
-                    tabState.selectedTab = 2
+                    tabState.selectedTab = 1
                 }
                 .buttonStyle(.borderedProminent)
             }
@@ -747,6 +753,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         do {
             let audioPlayer = try AVAudioPlayer(contentsOf: url)
             player = audioPlayer
+            player?.volume = volume
             currentSong = song
             player?.delegate = self
             updateTimeDisplay()
@@ -1285,10 +1292,15 @@ struct AlbumSongListView: View {
     }
 }
 
+class LibraryNavigation: ObservableObject {
+    @Published var path = NavigationPath()
+}
+
 struct LibraryView: View {
     let logger = Logger(subsystem: subsystem, category: "LibraryView")
 
     @EnvironmentObject private var dependencies: DependencyContainer
+    @EnvironmentObject private var libraryNavigation: LibraryNavigation  // NEW
     @StateObject private var artistVM: ArtistListViewModel
     @StateObject private var albumVM: AlbumListViewModel
     @StateObject private var songListVM: SongListViewModel
@@ -1301,7 +1313,7 @@ struct LibraryView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $libraryNavigation.path) {
             List {
                 NavigationLink(
                     "Playlists",
