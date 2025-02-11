@@ -59,7 +59,7 @@ class TabState: ObservableObject {
 struct CustomTabView: View {
     @Binding var selection: Int
     let tabs: [TabItem]
-    
+
     // NEW: Updated initializer to accept a trailing closure with @TabItemBuilder
     init(selection: Binding<Int>, @TabItemBuilder content: () -> [TabItem]) {
         self._selection = selection
@@ -71,6 +71,8 @@ struct CustomTabView: View {
             ForEach(tabs.indices, id: \.self) { index in
                 tabs[index].content
                     .opacity(selection == index ? 1 : 0)
+                    .animation(nil, value: selection)  // NEW: Disable implicit animation
+
             }
         }
         .overlay(
@@ -78,7 +80,7 @@ struct CustomTabView: View {
             HStack {
                 ForEach(tabs.indices, id: \.self) { index in
                     Button(action: {
-                        withAnimation { selection = index }
+                        selection = index
                     }) {
                         VStack(spacing: 4) {
                             Image(systemName: tabs[index].systemImage)
@@ -575,9 +577,10 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     private let playerPersistenceService: PlayerPersistenceService?
 
-    @Published var volume: Float = 1.0 {
+    @Published var volume: Float = 0.0 {  // NEW: Set default slider value to 0 (range -0.5 to 0.5)
         didSet {
-            player?.volume = volume
+            // NEW: Translate slider value (-0.5...0.5) to player volume (0.0...1.0)
+            player?.volume = volume + 0.5  // NEW
             Task {
                 await playerPersistenceService?.savePlaybackState(
                     volume: volume, currentIndex: currentIndex, songs: songs)
@@ -607,8 +610,8 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
                 }
             }
 
-            if let volume = await self.playerPersistenceService?.getVolume() {
-                self.volume = volume
+            if let stored = await self.playerPersistenceService?.getVolume() {
+                self.volume = stored - 0.5
             }
         }
     }
@@ -654,6 +657,12 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
             return .success
         }
 
+        // NEW: Add a toggle command to catch macOS pause button events.
+        commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
+            self?.playPause()  // NEW: Toggle play/pause
+            return .success
+        }
+
         commandCenter.nextTrackCommand.addTarget { [weak self] _ in
             self?.nextSong()
             return .success
@@ -674,6 +683,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         commandCenter.playCommand.isEnabled = true
         commandCenter.pauseCommand.isEnabled = true
         commandCenter.nextTrackCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.isEnabled = true
         commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.changePlaybackPositionCommand.isEnabled = true
     }
@@ -830,8 +840,16 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     func seek(to progress: Double) {
         guard let player = player else { return }
-        player.currentTime = Double(progress) * player.duration
+        // NEW: The positionTime provided is already in seconds; do not multiply by duration.
+        player.currentTime = progress  // NEW
         updateTimeDisplay()
+    }
+
+    func seekByFraction(_ fraction: Double) {  // NEW
+        guard let player = player else { return }
+        // Multiply the fraction (0...1) by the total duration to get the desired time.
+        player.currentTime = fraction * player.duration  // NEW
+        updateTimeDisplay()  // NEW
     }
 
     private func startTimer() {
@@ -964,7 +982,7 @@ struct PlayerView: View {
 
             HStack {
                 Image(systemName: "speaker.fill")
-                Slider(value: $playerVM.volume, in: 0...1)
+                Slider(value: $playerVM.volume, in: -0.5...0.5)
                 Image(systemName: "speaker.wave.3.fill")
             }
             .padding(.horizontal)
@@ -1002,9 +1020,9 @@ struct PlayerView: View {
                 in: 0...1,
                 onEditingChanged: { editing in
                     if !editing, let progress = editingProgress {
-                        playerVM.seek(to: progress)
+                        playerVM.seekByFraction(progress)  // NEW: Use seekByFraction for UI slider scrubbing
                     }
-                    editingProgress = nil  // Clear temporary value
+                    editingProgress = nil  // NEW
                 }
             )
             .accentColor(.purple)
@@ -1174,14 +1192,14 @@ struct AlbumGridView: View {
     }
     var body: some View {
         ScrollView {
+            SearchBar(
+                text: $viewModel.searchQuery,
+                onChange: { _ in },
+                placeholder: "Search albums...",
+                debounceSeconds: 0.3)
             if viewModel.filteredAlbums.isEmpty {
                 emptyStateView
             } else {
-                SearchBar(
-                    text: $viewModel.searchQuery,
-                    onChange: { _ in },
-                    placeholder: "Search albums...",
-                    debounceSeconds: 0.3)
 
                 LazyVGrid(columns: columns, spacing: 20) {
                     ForEach(viewModel.filteredAlbums) { album in
