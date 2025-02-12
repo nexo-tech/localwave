@@ -155,9 +155,7 @@ struct MainTabView: View {
     @StateObject private var libraryNavigation = LibraryNavigation()
 
     var body: some View {
-        print(libraryNavigation.path)
-
-        return ZStack(alignment: .bottom) {
+        ZStack(alignment: .bottom) {
             CustomTabView(selection: $tabState.selectedTab) {
                 TabItem(label: "Library", systemImage: "books.vertical", tag: 0) {
                     LibraryView(dependencies: dependencies)
@@ -580,7 +578,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     @Published var volume: Float = 0.0 {  // NEW: Set default slider value to 0 (range -0.5 to 0.5)
         didSet {
             // NEW: Translate slider value (-0.5...0.5) to player volume (0.0...1.0)
-            player?.volume = volume + 0.5  // NEW
+            player?.volume = volume + 0.5
             Task {
                 await playerPersistenceService?.savePlaybackState(
                     volume: volume, currentIndex: currentIndex, songs: songs)
@@ -841,15 +839,15 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     func seek(to progress: Double) {
         guard let player = player else { return }
         // NEW: The positionTime provided is already in seconds; do not multiply by duration.
-        player.currentTime = progress  // NEW
+        player.currentTime = progress
         updateTimeDisplay()
     }
 
-    func seekByFraction(_ fraction: Double) {  // NEW
+    func seekByFraction(_ fraction: Double) {
         guard let player = player else { return }
         // Multiply the fraction (0...1) by the total duration to get the desired time.
-        player.currentTime = fraction * player.duration  // NEW
-        updateTimeDisplay()  // NEW
+        player.currentTime = fraction * player.duration
+        updateTimeDisplay()
     }
 
     private func startTimer() {
@@ -1022,7 +1020,7 @@ struct PlayerView: View {
                     if !editing, let progress = editingProgress {
                         playerVM.seekByFraction(progress)  // NEW: Use seekByFraction for UI slider scrubbing
                     }
-                    editingProgress = nil  // NEW
+                    editingProgress = nil
                 }
             )
             .accentColor(.purple)
@@ -1318,10 +1316,11 @@ struct LibraryView: View {
     let logger = Logger(subsystem: subsystem, category: "LibraryView")
 
     @EnvironmentObject private var dependencies: DependencyContainer
-    @EnvironmentObject private var libraryNavigation: LibraryNavigation  // NEW
+    @EnvironmentObject private var libraryNavigation: LibraryNavigation
     @StateObject private var artistVM: ArtistListViewModel
     @StateObject private var albumVM: AlbumListViewModel
     @StateObject private var songListVM: SongListViewModel
+    @EnvironmentObject private var tabState: TabState  // already exists
 
     init(dependencies: DependencyContainer) {
         let dc = dependencies
@@ -1351,6 +1350,32 @@ struct LibraryView: View {
             Task {
                 try? await artistVM.loadArtists()
                 try? await albumVM.loadAlbums()
+            }
+        }
+        // NEW: Reload data when switching to the library tab
+        .onChange(of: tabState.selectedTab) { newTab in
+            if newTab == 0 {  // library tab
+                Task {
+                    do {
+                        try await artistVM.loadArtists()
+                        try await albumVM.loadAlbums()
+                    } catch {
+                        logger.error("failed to resync view \(error)")
+                    }
+                }
+            }
+        }
+        // NEW: Also refresh when a LibraryRefresh notification is posted
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("LibraryRefresh"))) {
+            _ in
+            Task {
+                do {
+                    try await artistVM.loadArtists()
+                    try await albumVM.loadAlbums()
+                } catch {
+
+                    logger.error("failed to resync view \(error)")
+                }
             }
         }
     }
@@ -1440,7 +1465,7 @@ struct SourceBrowseView: View {
         parentPathId: Int64?,
         sourceImportService: SourceImportService?,
         songImportService: SongImportService?,
-        viewModel: SourceBrowseViewModel? = nil  // NEW
+        viewModel: SourceBrowseViewModel? = nil
 
     ) {
         self.sourceId = sourceId
@@ -1528,6 +1553,8 @@ struct SourceBrowseViewInternal: View {
                                 defer {
                                     viewModel.isImporting = false
                                     showImportProgress = false
+                                    NotificationCenter.default.post(
+                                        name: Notification.Name("LibraryRefresh"), object: nil)  // NEW
                                 }
 
                                 do {
@@ -1749,7 +1776,7 @@ struct SyncView: View {
                     parentPathId: singleSource.pathId,
                     sourceImportService: syncViewModel.sourceService?.importService(),
                     songImportService: syncViewModel.songImportService,
-                    viewModel: browseVM  // NEW
+                    viewModel: browseVM
                 )
                 .onAppear {
                     DispatchQueue.main.async {
@@ -1796,7 +1823,7 @@ struct SyncView: View {
                                 parentPathId: source.pathId,
                                 sourceImportService: syncViewModel.sourceService?.importService(),
                                 songImportService: syncViewModel.songImportService,
-                                viewModel: browseVM  // NEW
+                                viewModel: browseVM
                             )
                             .onAppear {
                                 DispatchQueue.main.async {
@@ -1872,7 +1899,7 @@ struct SourceGridCell: View {
     let source: Source
     let isSyncing: Bool
     let onResync: () -> Void
-    let onDelete: () -> Void  // NEW
+    let onDelete: () -> Void
 
     private var lastSyncText: String {
         let formatter = DateFormatter()
@@ -1920,7 +1947,7 @@ struct SourceGridCell: View {
         .cornerRadius(8)
         .contextMenu {
             Button(role: .destructive) {
-                onDelete()  // NEW
+                onDelete()
             } label: {
                 Label("Delete Source", systemImage: "trash")
             }
@@ -1939,10 +1966,7 @@ struct SourceGridCell: View {
     }
 
     private var sourceTypeColor: Color {
-        switch source.type {
-        case .iCloud: return .blue
-        default: return .gray
-        }
+        .gray
     }
 }
 
@@ -2059,7 +2083,10 @@ class SyncViewModel: ObservableObject {
 
     private func syncSource(_ source: Source) async throws {
         currentSyncSourceId = source.id
-        defer { currentSyncSourceId = nil }
+        defer {
+            currentSyncSourceId = nil
+            NotificationCenter.default.post(name: Notification.Name("LibraryRefresh"), object: nil)  // NEW
+        }
 
         guard let sourceId = source.id else {
             throw CustomError.genericError("Invalid source ID")
@@ -2268,6 +2295,9 @@ struct ThemeProvider: ViewModifier {
         content
             // .environment(\.font, .system(size: 18, weight: .medium))  // Global font
             .font(Oxanium())
+            .accentColor(.purple)  // NEW: Consistent accent color for deep dark theme // NEW
+            .environment(\.colorScheme, .dark)  // NEW: Force dark mode environment // NEW
+
             .preferredColorScheme(.dark)  // Force dark mode
     }
 }
@@ -2376,41 +2406,65 @@ struct PlaylistListView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(viewModel.playlists) { playlist in
-                    NavigationLink {
-                        PlaylistDetailView(
-                            playlist: playlist,
-                            viewModel: PlaylistDetailViewModel(
+            if viewModel.playlists.isEmpty {  // NEW: Check for empty playlists
+                VStack(spacing: 20) {  // NEW: Empty state view
+                    Image(systemName: "music.note.list")
+                        .font(.system(size: 60))
+                        .foregroundColor(.gray)
+                    Text("No Playlists Found")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                    Text("Create a playlist to get started.")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                    Button("Create Playlist") {  // NEW: Button to trigger creation dialog
+                        viewModel.showingCreateDialog = true
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+                .padding()
+                .navigationTitle("Playlists")
+            } else {  // OLD: Existing list view for playlists
+                List {
+                    ForEach(viewModel.playlists) { playlist in
+                        NavigationLink {
+                            PlaylistDetailView(
                                 playlist: playlist,
-                                playlistSongRepo: viewModel.playlistSongRepo,
-                                songRepo: viewModel.songRepo
+                                viewModel: PlaylistDetailViewModel(
+                                    playlist: playlist,
+                                    playlistSongRepo: viewModel.playlistSongRepo,
+                                    songRepo: viewModel.songRepo
+                                )
                             )
-                        )
-                    } label: {
-                        Text(playlist.name)
-                            .font(.headline)
+                        } label: {
+                            Text(playlist.name)
+                                .font(.headline)
+                        }
+                    }
+                    .onDelete { offsets in
+                        Task { await viewModel.deletePlaylist(at: offsets) }
                     }
                 }
-                .onDelete { offsets in  // NEW: Handle deletion of playlists.
-                    Task { await viewModel.deletePlaylist(at: offsets) }  // NEW
+                .toolbar {
+                    Button {
+                        viewModel.showingCreateDialog = true
+                    } label: {
+                        Image(systemName: "plus")
+                    }
                 }
+                .navigationTitle("Playlists")
             }
-            .toolbar {
-                Button {
-                    viewModel.showingCreateDialog = true
-                } label: {
-                    Image(systemName: "plus")
-                }
-            }
-            .alert("New Playlist", isPresented: $viewModel.showingCreateDialog) {
-                TextField("Name", text: $viewModel.newPlaylistName)
-                Button("Create", action: { Task { await viewModel.createPlaylist() } })
-                Button("Cancel", role: .cancel) {}
-            }
-            .navigationTitle("Playlists")
         }
-        .onAppear { Task { await viewModel.loadPlaylists() } }
+        .alert("New Playlist", isPresented: $viewModel.showingCreateDialog) {
+            TextField("Name", text: $viewModel.newPlaylistName)
+            Button("Create") {
+                Task { await viewModel.createPlaylist() }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
+        .onAppear {
+            Task { await viewModel.loadPlaylists() }
+        }
     }
 }
 
