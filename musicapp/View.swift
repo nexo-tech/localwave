@@ -60,7 +60,6 @@ struct CustomTabView: View {
     @Binding var selection: Int
     let tabs: [TabItem]
 
-    // NEW: Updated initializer to accept a trailing closure with @TabItemBuilder
     init(selection: Binding<Int>, @TabItemBuilder content: () -> [TabItem]) {
         self._selection = selection
         self.tabs = content()
@@ -71,7 +70,7 @@ struct CustomTabView: View {
             ForEach(tabs.indices, id: \.self) { index in
                 tabs[index].content
                     .opacity(selection == index ? 1 : 0)
-                    .animation(nil, value: selection)  // NEW: Disable implicit animation
+                    .animation(nil, value: selection)
 
             }
         }
@@ -562,6 +561,15 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     @Published var currentTime: String = "0:00"
     @Published var duration: String = "0:00"
 
+    private var isShuffleEnabled: Bool = false
+    private var originalQueue: [Song] = []
+    private var isRepeatEnabled: Bool = false
+    
+    var queue: [Song] {
+            return songs
+        }
+
+
     private let songRepo: SongRepository?
     init(playerPersistenceService: PlayerPersistenceService, songRepo: SongRepository) {
         self.playerPersistenceService = playerPersistenceService
@@ -575,9 +583,9 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     private let playerPersistenceService: PlayerPersistenceService?
 
-    @Published var volume: Float = 0.0 {  // NEW: Set default slider value to 0 (range -0.5 to 0.5)
+    @Published var volume: Float = 0.0 {
         didSet {
-            // NEW: Translate slider value (-0.5...0.5) to player volume (0.0...1.0)
+
             player?.volume = volume + 0.5
             Task {
                 await playerPersistenceService?.savePlaybackState(
@@ -655,9 +663,8 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
             return .success
         }
 
-        // NEW: Add a toggle command to catch macOS pause button events.
         commandCenter.togglePlayPauseCommand.addTarget { [weak self] _ in
-            self?.playPause()  // NEW: Toggle play/pause
+            self?.playPause()
             return .success
         }
 
@@ -828,8 +835,17 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     func nextSong() {
         guard !songs.isEmpty else { return }
-        currentIndex = (currentIndex + 1) % songs.count
-        playSong(songs[currentIndex])
+        if currentIndex + 1 < songs.count {
+            currentIndex += 1
+            playSong(songs[currentIndex])
+        } else {
+            if isRepeatEnabled {
+                currentIndex = 0
+                playSong(songs[currentIndex])
+            } else {
+                stop()
+            }
+        }
         Task {
             await self.playerPersistenceService?.savePlaybackState(
                 volume: self.volume, currentIndex: self.currentIndex, songs: self.songs)
@@ -838,9 +854,40 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     func seek(to progress: Double) {
         guard let player = player else { return }
-        // NEW: The positionTime provided is already in seconds; do not multiply by duration.
+
         player.currentTime = progress
         updateTimeDisplay()
+    }
+
+    func setShuffle(_ enabled: Bool) {
+        if enabled {
+            if !isShuffleEnabled {
+                originalQueue = songs
+                songs.shuffle()
+                currentIndex = 0
+                currentSong = songs.first
+                updateNowPlayingInfo()
+            }
+        } else {
+            if isShuffleEnabled {
+                songs = originalQueue
+                if let currentSong = currentSong,
+                    let index = songs.firstIndex(where: { $0.id == currentSong.id })
+                {
+                    currentIndex = index
+                } else {
+                    currentIndex = 0
+                    currentSong = songs.first
+                }
+                originalQueue = []
+                updateNowPlayingInfo()
+            }
+        }
+        isShuffleEnabled = enabled
+    }
+
+    func setRepeat(_ enabled: Bool) {
+        isRepeatEnabled = enabled
     }
 
     func seekByFraction(_ fraction: Double) {
@@ -917,16 +964,17 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
 struct PlayerView: View {
     @EnvironmentObject private var playerVM: PlayerViewModel
-    @State private var editingProgress: Double?
+    @State private var showingQueue = false
+    @State private var shuffleEnabled: Bool = false
+    @State private var repeatEnabled: Bool = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: 20) {
+        VStack {
+            // Top Bar
             HStack {
                 Spacer()
-                Button(action: {
-                    dismiss()
-                }) {
+                Button(action: { dismiss() }) {
                     Image(systemName: "xmark.circle.fill")
                         .font(.largeTitle)
                         .foregroundColor(.gray)
@@ -934,16 +982,148 @@ struct PlayerView: View {
             }
             .padding(.top)
 
+            // Artwork and Song Info Section
             if let song = playerVM.currentSong {
-                songInfoView(song: song)
-                progressView()
-                controlsView()
-            } else {
-                emptyStateView()
+                VStack {
+                    if let cover = coverArt(of: song) {
+                        Image(uiImage: cover)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(maxWidth: 300, maxHeight: 300)
+                            .cornerRadius(8)
+                    } else {
+                        Image(systemName: "music.note")
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 200, height: 200)
+                            .foregroundColor(.gray)
+                    }
+
+                    Text(song.title)
+                        .font(.title)
+                        .fontWeight(.semibold)
+                        .padding(.top, 8)
+                    Text(song.artist)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
             }
+
+            // Playback Progress Slider
+            VStack {
+                Slider(
+                    value: Binding(
+                        get: { playerVM.playbackProgress },
+                        set: { newValue in
+                            playerVM.seekByFraction(newValue)
+                        }
+                    ),
+                    in: 0...1
+                )
+                .accentColor(.purple)
+
+                HStack {
+                    Text(playerVM.currentTime)
+                    Spacer()
+                    Text(playerVM.duration)
+                }
+                .font(.caption)
+                .foregroundColor(.secondary)
+            }
+            .padding(.horizontal)
+
+            // Playback Control Buttons (Shuffle, Previous, Play/Pause, Next, Repeat)
+            HStack(spacing: 30) {
+                Button(action: {
+                    shuffleEnabled.toggle()
+                    playerVM.setShuffle(shuffleEnabled)
+                }) {
+                    Image(systemName: shuffleEnabled ? "shuffle.circle.fill" : "shuffle.circle")
+                        .font(.system(size: 30))
+                        .foregroundColor(shuffleEnabled ? .purple : .gray)
+                }
+
+                Button(action: { playerVM.previousSong() }) {
+                    Image(systemName: "backward.fill")
+                        .font(.system(size: 30))
+                        .foregroundColor(.primary)
+                }
+
+                Button(action: { playerVM.playPause() }) {
+                    Image(systemName: playerVM.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 50))
+                        .foregroundColor(.primary)
+                }
+
+                Button(action: { playerVM.nextSong() }) {
+                    Image(systemName: "forward.fill")
+                        .font(.system(size: 30))
+                        .foregroundColor(.primary)
+                }
+
+                Button(action: {
+                    repeatEnabled.toggle()
+                    playerVM.setRepeat(repeatEnabled)
+                }) {
+                    Image(systemName: repeatEnabled ? "repeat.circle.fill" : "repeat.circle")
+                        .font(.system(size: 30))
+                        .foregroundColor(repeatEnabled ? .purple : .gray)
+                }
+            }
+            .padding()
+
+            // Volume Control
+            HStack {
+                Image(systemName: "speaker.fill")
+                Slider(value: $playerVM.volume, in: -0.5...0.5)
+                Image(systemName: "speaker.wave.3.fill")
+            }
+            .padding(.horizontal)
+
+            // Queue Toggle Button
+            Button(action: {
+                showingQueue.toggle()
+            }) {
+                HStack {
+                    Image(systemName: "list.bullet")
+                    Text("Queue (\(playerVM.queue.count))")
+                }
+            }
+            .padding(.top)
+
+            // Currently Played Queue
+            if showingQueue {
+                ScrollView {
+                    VStack(alignment: .leading) {
+                        ForEach(playerVM.queue.indices, id: \.self) { index in
+                            let song = playerVM.queue[index]
+                            HStack {
+                                Text("\(index + 1).")
+                                VStack(alignment: .leading) {
+                                    Text(song.title)
+                                        .font(.headline)
+                                    Text(song.artist)
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    .padding()
+                }
+                .frame(maxHeight: 200)
+                .background(Color.black.opacity(0.2))
+                .cornerRadius(8)
+                .padding(.horizontal)
+            }
+
             Spacer()
         }
         .padding()
+        .background(Color(.systemBackground))
         .onAppear {
             playerVM.updateNowPlayingInfo()
         }
@@ -952,107 +1132,6 @@ struct PlayerView: View {
         ) { _ in
             playerVM.updateNowPlayingInfo()
         }
-    }
-
-    private func songInfoView(song: Song) -> some View {
-        VStack {
-            Text(song.title)
-                .font(.title2)
-                .fontWeight(.semibold)
-
-            Text(song.artist)
-                .font(.subheadline)
-                .foregroundColor(.secondary)
-
-            if let cover = coverArt(of: song) {
-                Image(uiImage: cover)
-                    .resizable()
-                    .scaledToFit()
-                    .frame(width: 200, height: 200)
-                    .cornerRadius(8)
-                    .padding(.vertical)
-            }
-        }
-    }
-
-    private func controlsView() -> some View {
-        VStack {
-
-            HStack {
-                Image(systemName: "speaker.fill")
-                Slider(value: $playerVM.volume, in: -0.5...0.5)
-                Image(systemName: "speaker.wave.3.fill")
-            }
-            .padding(.horizontal)
-
-            HStack(spacing: 40) {
-                Button(action: playerVM.previousSong) {
-                    Image(systemName: "backward.fill")
-                        .font(.title)
-                }
-
-                Button(action: playerVM.playPause) {
-                    Image(systemName: playerVM.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 40))
-                        .frame(width: 60, height: 60)
-                }
-
-                Button(action: playerVM.nextSong) {
-                    Image(systemName: "forward.fill")
-                        .font(.title)
-                }
-            }
-            .foregroundColor(.primary)
-        }
-    }
-
-    private func progressView() -> some View {
-        VStack {
-            Slider(
-                value: Binding(
-                    get: { editingProgress ?? playerVM.playbackProgress },
-                    set: { newValue in
-                        editingProgress = newValue
-                    }
-                ),
-                in: 0...1,
-                onEditingChanged: { editing in
-                    if !editing, let progress = editingProgress {
-                        playerVM.seekByFraction(progress)  // NEW: Use seekByFraction for UI slider scrubbing
-                    }
-                    editingProgress = nil
-                }
-            )
-            .accentColor(.purple)
-
-            HStack {
-                Text(playerVM.currentTime)
-                Spacer()
-                Text(playerVM.duration)
-            }
-            .font(.caption)
-            .foregroundColor(.secondary)
-        }
-    }
-
-    private func emptyStateView() -> some View {
-        VStack {
-            Text("No song playing")
-                .font(.headline)
-                .padding()
-
-            Image(systemName: "music.note")
-                .font(.system(size: 60))
-                .foregroundColor(.secondary)
-                .padding()
-        }
-    }
-
-    private func coverArt(of song: Song) -> UIImage? {
-        guard let coverArtPath = song.coverArtPath else { return nil }
-        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
-        let coverURL = docs.appendingPathComponent(coverArtPath)
-        return UIImage(contentsOfFile: coverURL.path)
     }
 }
 
@@ -1352,7 +1431,7 @@ struct LibraryView: View {
                 try? await albumVM.loadAlbums()
             }
         }
-        // NEW: Reload data when switching to the library tab
+
         .onChange(of: tabState.selectedTab) { newTab in
             if newTab == 0 {  // library tab
                 Task {
@@ -1365,7 +1444,7 @@ struct LibraryView: View {
                 }
             }
         }
-        // NEW: Also refresh when a LibraryRefresh notification is posted
+
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("LibraryRefresh"))) {
             _ in
             Task {
@@ -1458,7 +1537,7 @@ struct SourceBrowseView: View {
     let parentPathId: Int64?
     let sourceImportService: SourceImportService?
     let songImportService: SongImportService?
-    @StateObject var viewModel: SourceBrowseViewModel  // NEW: now passed in
+    @StateObject var viewModel: SourceBrowseViewModel
 
     init(
         sourceId: Int64,
@@ -1554,7 +1633,7 @@ struct SourceBrowseViewInternal: View {
                                     viewModel.isImporting = false
                                     showImportProgress = false
                                     NotificationCenter.default.post(
-                                        name: Notification.Name("LibraryRefresh"), object: nil)  // NEW
+                                        name: Notification.Name("LibraryRefresh"), object: nil)
                                 }
 
                                 do {
@@ -1617,7 +1696,7 @@ struct SourceBrowseViewInternal: View {
                     HStack {
                         // Icon: folder or doc
                         Image(systemName: item.isDirectory ? "folder.fill" : "doc.fill")
-                            .foregroundColor(item.isDirectory ? .blue : .gray)
+                            .foregroundColor(.gray)
 
                         // Name + relative path
                         VStack(alignment: .leading) {
@@ -1717,7 +1796,6 @@ struct SyncView: View {
     @StateObject private var syncViewModel: SyncViewModel
     private var dependencies: DependencyContainer
 
-    // NEW: New state to let user toggle between single-source and grid view.
     @State private var showGrid: Bool = false
 
     init(dependencies: DependencyContainer) {
@@ -1752,7 +1830,6 @@ struct SyncView: View {
         }
     }
 
-    // NEW: Extracted content view that shows either a single source view or the grid.
     @ViewBuilder
     private var contentView: some View {
         if syncViewModel.sources.isEmpty {
@@ -1763,7 +1840,7 @@ struct SyncView: View {
             if let singleSource = syncViewModel.sources.first,
                 let sourceId = singleSource.id
             {
-                // NEW: Retrieve (or create) the browse view model.
+
                 let browseVM =
                     dependencies.sourceBrowseViewModels[sourceId]
                     ?? SourceBrowseViewModel(
@@ -1784,7 +1861,7 @@ struct SyncView: View {
                     }
                 }
                 .toolbar {
-                    // NEW: Allow user to go back to the grid.
+
                     ToolbarItem(placement: .navigationBarLeading) {
                         Button("Grid") {
                             showGrid = true
@@ -1793,7 +1870,7 @@ struct SyncView: View {
                 }
             }
         } else {
-            // NEW: Show the source grid view if more than one source exists or user chooses grid.
+
             sourceGridView
                 .toolbar {
                     ToolbarItem(placement: .navigationBarLeading) {
@@ -1842,7 +1919,7 @@ struct SyncView: View {
                                 syncViewModel.resyncSource(source)
                             },
                             onDelete: {
-                                // NEW: Delete source via sync view model.
+
                                 syncViewModel.deleteSource(source)
                             }
                         )
@@ -1884,7 +1961,7 @@ struct SyncView: View {
                 logger.debug("new path is getting synced: \(url)")
                 try syncViewModel.registerBookmark(url)
                 syncViewModel.createSource(path: url.path)
-                // NEW: After adding a new source, switch to grid view so the new source is visible.
+
                 showGrid = true
             } catch {
                 logger.error("Folder selection error: \(error.localizedDescription)")
@@ -2085,7 +2162,7 @@ class SyncViewModel: ObservableObject {
         currentSyncSourceId = source.id
         defer {
             currentSyncSourceId = nil
-            NotificationCenter.default.post(name: Notification.Name("LibraryRefresh"), object: nil)  // NEW
+            NotificationCenter.default.post(name: Notification.Name("LibraryRefresh"), object: nil)
         }
 
         guard let sourceId = source.id else {
@@ -2295,8 +2372,8 @@ struct ThemeProvider: ViewModifier {
         content
             // .environment(\.font, .system(size: 18, weight: .medium))  // Global font
             .font(Oxanium())
-            .accentColor(.purple)  // NEW: Consistent accent color for deep dark theme // NEW
-            .environment(\.colorScheme, .dark)  // NEW: Force dark mode environment // NEW
+            .accentColor(.purple)
+            .environment(\.colorScheme, .dark)
 
             .preferredColorScheme(.dark)  // Force dark mode
     }
@@ -2334,13 +2411,12 @@ class PlaylistListViewModel: ObservableObject {
         playlists = (try? await playlistRepo.getAll()) ?? []
     }
 
-    // NEW: Function to delete playlists.
     func deletePlaylist(at offsets: IndexSet) async {
         for index in offsets {
             let playlist = playlists[index]
             if let id = playlist.id {
                 do {
-                    try await playlistRepo.delete(playlistId: id)  // NEW: Use delete method from repository
+                    try await playlistRepo.delete(playlistId: id)
                 } catch {
                     // Log or handle error as needed.
                     logger.debug("failed to delete song with id: \(id)")
@@ -2406,8 +2482,8 @@ struct PlaylistListView: View {
 
     var body: some View {
         NavigationStack {
-            if viewModel.playlists.isEmpty {  // NEW: Check for empty playlists
-                VStack(spacing: 20) {  // NEW: Empty state view
+            if viewModel.playlists.isEmpty {
+                VStack(spacing: 20) {
                     Image(systemName: "music.note.list")
                         .font(.system(size: 60))
                         .foregroundColor(.gray)
@@ -2417,7 +2493,7 @@ struct PlaylistListView: View {
                     Text("Create a playlist to get started.")
                         .multilineTextAlignment(.center)
                         .foregroundColor(.secondary)
-                    Button("Create Playlist") {  // NEW: Button to trigger creation dialog
+                    Button("Create Playlist") {
                         viewModel.showingCreateDialog = true
                     }
                     .buttonStyle(.borderedProminent)
@@ -2474,27 +2550,45 @@ struct PlaylistDetailView: View {
     @EnvironmentObject var playerVM: PlayerViewModel
 
     var body: some View {
-        List {
-            ForEach(viewModel.songs) { song in
-                SongRow(song: song) {
-                    playerVM.configureQueue(
-                        songs: viewModel.songs, startIndex: viewModel.songs.firstIndex(of: song)!)
-                    playerVM.playSong(song)
+        VStack {
+            if viewModel.songs.isEmpty {
+                VStack(spacing: 20) {
+                    Image(systemName: "music.note")
+                        .font(.system(size: 60))
+                        .foregroundColor(.gray)
+                    Text("No Songs in this Playlist")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                    Text("Tap 'Add Songs' to add your favorite tracks.")
+                        .multilineTextAlignment(.center)
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(viewModel.songs) { song in
+                        SongRow(song: song) {
+                            if let index = viewModel.songs.firstIndex(of: song) {
+                                playerVM.configureQueue(songs: viewModel.songs, startIndex: index)
+                                playerVM.playSong(song)
+                            }
+                        }
+                    }
+                    .onDelete { offsets in
+                        Task { await viewModel.deleteSong(at: offsets) }
+                    }
+                    .onMove { from, to in
+                        Task { await viewModel.reorderSongs(from: from, to: to) }
+                    }
                 }
             }
-            .onDelete(perform: { offsets in
-                Task { await viewModel.deleteSong(at: offsets) }
-            })
-            .onMove(perform: { from, to in
-                Task { await viewModel.reorderSongs(from: from, to: to) }
-            })
         }
         .toolbar {
             ToolbarItemGroup(placement: .navigationBarTrailing) {
                 Button("Add Songs") {
                     viewModel.showAddSongs = true
                 }
-
                 EditButton()
             }
         }
@@ -2512,11 +2606,12 @@ struct PlaylistDetailView: View {
                         }
                         await viewModel.loadSongs()
                     }
-                }
-            )
+                })
         }
         .navigationTitle(playlist.name)
-        .onAppear { Task { await viewModel.loadSongs() } }
+        .onAppear {
+            Task { await viewModel.loadSongs() }
+        }
     }
 }
 
