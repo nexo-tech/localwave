@@ -564,11 +564,10 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     private var isShuffleEnabled: Bool = false
     private var originalQueue: [Song] = []
     private var isRepeatEnabled: Bool = false
-    
-    var queue: [Song] {
-            return songs
-        }
 
+    var queue: [Song] {
+        return songs
+    }
 
     private let songRepo: SongRepository?
     init(playerPersistenceService: PlayerPersistenceService, songRepo: SongRepository) {
@@ -583,10 +582,10 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     private let playerPersistenceService: PlayerPersistenceService?
 
-    @Published var volume: Float = 0.0 {
+    // NEW:
+    @Published var volume: Float = 0.5 {  // default volume now 0.5
         didSet {
-
-            player?.volume = volume + 0.5
+            player?.volume = volume
             Task {
                 await playerPersistenceService?.savePlaybackState(
                     volume: volume, currentIndex: currentIndex, songs: songs)
@@ -859,25 +858,31 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         updateTimeDisplay()
     }
 
-    func setShuffle(_ enabled: Bool) {
+    func setShuffle(_ enabled: Bool) {  // NEW
         if enabled {
             if !isShuffleEnabled {
-                originalQueue = songs
-                songs.shuffle()
-                currentIndex = 0
-                currentSong = songs.first
+                originalQueue = songs  // preserve original order
+                if let current = currentSong {
+                    var remainingSongs = songs.filter { $0.id != current.id }
+                    remainingSongs.shuffle()
+                    songs = [current] + remainingSongs  // keep current song at index 0
+                    currentIndex = 0
+                } else {
+                    songs.shuffle()
+                    currentIndex = 0
+                }
                 updateNowPlayingInfo()
             }
         } else {
             if isShuffleEnabled {
-                songs = originalQueue
-                if let currentSong = currentSong,
-                    let index = songs.firstIndex(where: { $0.id == currentSong.id })
-                {
-                    currentIndex = index
-                } else {
-                    currentIndex = 0
-                    currentSong = songs.first
+                if let current = currentSong, !originalQueue.isEmpty {
+                    songs = originalQueue
+                    if let index = songs.firstIndex(where: { $0.id == current.id }) {
+                        currentIndex = index
+                    } else {
+                        currentIndex = 0
+                        currentSong = songs.first
+                    }
                 }
                 originalQueue = []
                 updateNowPlayingInfo()
@@ -962,7 +967,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     }
 }
 
-struct PlayerView: View {
+struct PlayerView: View {  // NEW: Updated layout for Winamp style
     @EnvironmentObject private var playerVM: PlayerViewModel
     @State private var showingQueue = false
     @State private var shuffleEnabled: Bool = false
@@ -970,160 +975,192 @@ struct PlayerView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack {
-            // Top Bar
-            HStack {
-                Spacer()
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.largeTitle)
-                        .foregroundColor(.gray)
-                }
-            }
-            .padding(.top)
-
-            // Artwork and Song Info Section
-            if let song = playerVM.currentSong {
-                VStack {
-                    if let cover = coverArt(of: song) {
-                        Image(uiImage: cover)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(maxWidth: 300, maxHeight: 300)
-                            .cornerRadius(8)
-                    } else {
-                        Image(systemName: "music.note")
-                            .resizable()
-                            .scaledToFit()
-                            .frame(width: 200, height: 200)
-                            .foregroundColor(.gray)
-                    }
-
-                    Text(song.title)
-                        .font(.title)
-                        .fontWeight(.semibold)
-                        .padding(.top, 8)
-                    Text(song.artist)
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                }
-                .padding()
-            }
-
-            // Playback Progress Slider
+        ZStack {  // NEW: Added background gradient
+            LinearGradient(
+                gradient: Gradient(colors: [Color.purple.opacity(0.8), Color.blue.opacity(0.8)]),
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .edgesIgnoringSafeArea(.all)
             VStack {
-                Slider(
-                    value: Binding(
-                        get: { playerVM.playbackProgress },
-                        set: { newValue in
-                            playerVM.seekByFraction(newValue)
-                        }
-                    ),
-                    in: 0...1
-                )
-                .accentColor(.purple)
-
+                // Top Bar
                 HStack {
-                    Text(playerVM.currentTime)
                     Spacer()
-                    Text(playerVM.duration)
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.largeTitle)
+                            .foregroundColor(.white)  // NEW
+                    }
                 }
-                .font(.caption)
-                .foregroundColor(.secondary)
-            }
-            .padding(.horizontal)
+                .padding(.top)
 
-            // Playback Control Buttons (Shuffle, Previous, Play/Pause, Next, Repeat)
-            HStack(spacing: 30) {
-                Button(action: {
-                    shuffleEnabled.toggle()
-                    playerVM.setShuffle(shuffleEnabled)
-                }) {
-                    Image(systemName: shuffleEnabled ? "shuffle.circle.fill" : "shuffle.circle")
-                        .font(.system(size: 30))
-                        .foregroundColor(shuffleEnabled ? .purple : .gray)
-                }
-
-                Button(action: { playerVM.previousSong() }) {
-                    Image(systemName: "backward.fill")
-                        .font(.system(size: 30))
-                        .foregroundColor(.primary)
-                }
-
-                Button(action: { playerVM.playPause() }) {
-                    Image(systemName: playerVM.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 50))
-                        .foregroundColor(.primary)
-                }
-
-                Button(action: { playerVM.nextSong() }) {
-                    Image(systemName: "forward.fill")
-                        .font(.system(size: 30))
-                        .foregroundColor(.primary)
-                }
-
-                Button(action: {
-                    repeatEnabled.toggle()
-                    playerVM.setRepeat(repeatEnabled)
-                }) {
-                    Image(systemName: repeatEnabled ? "repeat.circle.fill" : "repeat.circle")
-                        .font(.system(size: 30))
-                        .foregroundColor(repeatEnabled ? .purple : .gray)
-                }
-            }
-            .padding()
-
-            // Volume Control
-            HStack {
-                Image(systemName: "speaker.fill")
-                Slider(value: $playerVM.volume, in: -0.5...0.5)
-                Image(systemName: "speaker.wave.3.fill")
-            }
-            .padding(.horizontal)
-
-            // Queue Toggle Button
-            Button(action: {
-                showingQueue.toggle()
-            }) {
-                HStack {
-                    Image(systemName: "list.bullet")
-                    Text("Queue (\(playerVM.queue.count))")
-                }
-            }
-            .padding(.top)
-
-            // Currently Played Queue
-            if showingQueue {
-                ScrollView {
-                    VStack(alignment: .leading) {
-                        ForEach(playerVM.queue.indices, id: \.self) { index in
-                            let song = playerVM.queue[index]
-                            HStack {
-                                Text("\(index + 1).")
-                                VStack(alignment: .leading) {
-                                    Text(song.title)
-                                        .font(.headline)
-                                    Text(song.artist)
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .padding(.vertical, 4)
+                // Artwork and Song Info Section
+                if let song = playerVM.currentSong {
+                    VStack {
+                        if let cover = coverArt(of: song) {
+                            Image(uiImage: cover)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: 300, maxHeight: 300)
+                                .cornerRadius(8)
+                                .shadow(radius: 10)  // NEW
+                        } else {
+                            Image(systemName: "music.note")
+                                .resizable()
+                                .scaledToFit()
+                                .frame(width: 200, height: 200)
+                                .foregroundColor(.white)  // NEW
                         }
+
+                        Text(song.title)
+                            .font(.title)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)  // NEW
+                            .padding(.top, 8)
+                        Text(song.artist)
+                            .font(.subheadline)
+                            .foregroundColor(.white.opacity(0.8))  // NEW
                     }
                     .padding()
                 }
-                .frame(maxHeight: 200)
-                .background(Color.black.opacity(0.2))
-                .cornerRadius(8)
-                .padding(.horizontal)
-            }
 
-            Spacer()
+                // Playback Progress Slider
+                VStack {
+                    Slider(
+                        value: Binding(
+                            get: { playerVM.playbackProgress },
+                            set: { newValue in
+                                playerVM.seekByFraction(newValue)
+                            }
+                        ),
+                        in: 0...1
+                    )
+                    .accentColor(.yellow)  // NEW
+                    .padding(.horizontal)
+
+                    HStack {
+                        Text(playerVM.currentTime)
+                        Spacer()
+                        Text(playerVM.duration)
+                    }
+                    .font(.caption)
+                    .foregroundColor(.white)  // NEW
+                    .padding(.horizontal)
+                }
+                .padding(.vertical)
+
+                // Playback Control Buttons
+                HStack(spacing: 30) {
+                    Button(action: {
+                        shuffleEnabled.toggle()
+                        playerVM.setShuffle(shuffleEnabled)
+                    }) {
+                        Image(systemName: shuffleEnabled ? "shuffle.circle.fill" : "shuffle.circle")
+                            .font(.system(size: 30))
+                            .foregroundColor(shuffleEnabled ? .yellow : .white)
+                    }
+
+                    Button(action: { playerVM.previousSong() }) {
+                        Image(systemName: "backward.fill")
+                            .font(.system(size: 30))
+                            .foregroundColor(.white)
+                    }
+
+                    Button(action: { playerVM.playPause() }) {
+                        Image(
+                            systemName: playerVM.isPlaying
+                                ? "pause.circle.fill" : "play.circle.fill"
+                        )
+                        .font(.system(size: 60))
+                        .foregroundColor(.white)
+                    }
+
+                    Button(action: { playerVM.nextSong() }) {
+                        Image(systemName: "forward.fill")
+                            .font(.system(size: 30))
+                            .foregroundColor(.white)
+                    }
+
+                    Button(action: {
+                        repeatEnabled.toggle()
+                        playerVM.setRepeat(repeatEnabled)
+                    }) {
+                        Image(systemName: repeatEnabled ? "repeat.circle.fill" : "repeat.circle")
+                            .font(.system(size: 30))
+                            .foregroundColor(repeatEnabled ? .yellow : .white)
+                    }
+                }
+                .padding()
+
+                // Volume Control - NEW: Updated slider range and styling
+                HStack {
+                    Image(systemName: "speaker.fill")
+                        .foregroundColor(.white)
+                    Slider(value: $playerVM.volume, in: 0...1)
+                        .accentColor(.yellow)
+                    Image(systemName: "speaker.wave.3.fill")
+                        .foregroundColor(.white)
+                }
+                .padding(.horizontal)
+
+                // Queue Toggle Button
+                Button(action: {
+                    showingQueue.toggle()
+                }) {
+                    HStack {
+                        Image(systemName: "list.bullet")
+                        Text("Queue (\(playerVM.queue.count))")
+                    }
+                    .foregroundColor(.white)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 16)
+                    .background(Color.black.opacity(0.3))
+                    .cornerRadius(10)
+                }
+                .padding(.top)
+
+                // Currently Played Queue - NEW: Added current song icon and tap gesture to play new song
+                if showingQueue {
+                    ScrollView {
+                        VStack(alignment: .leading) {
+                            ForEach(playerVM.queue.indices, id: \.self) { index in  // NEW
+                                let song = playerVM.queue[index]
+                                HStack {
+                                    Text("\(index + 1).")
+                                        .foregroundColor(.white)
+                                    VStack(alignment: .leading) {
+                                        Text(song.title)
+                                            .font(.headline)
+                                            .foregroundColor(.white)
+                                        Text(song.artist)
+                                            .font(.subheadline)
+                                            .foregroundColor(.white.opacity(0.8))
+                                    }
+                                    Spacer()
+                                    if song.id == playerVM.currentSong?.id {  // NEW
+                                        Image(systemName: "speaker.wave.2.fill")
+                                            .foregroundColor(.green)
+                                    }
+                                }
+                                .padding(.vertical, 4)
+                                .contentShape(Rectangle())  // NEW
+                                .onTapGesture {  // NEW
+                                    playerVM.playSong(song)
+                                }
+                            }
+                        }
+                        .padding()
+                    }
+                    .frame(maxHeight: 200)
+                    .background(Color.black.opacity(0.2))
+                    .cornerRadius(8)
+                    .padding(.horizontal)
+                }
+
+                Spacer()
+            }
+            .padding()
         }
-        .padding()
-        .background(Color(.systemBackground))
         .onAppear {
             playerVM.updateNowPlayingInfo()
         }
