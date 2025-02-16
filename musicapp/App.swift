@@ -6,7 +6,7 @@ import os
 
 /// subsystem used in logs
 let subsystem = "com.snowbear.musicapp"
-let schemaVersion = 28
+let schemaVersion = 29
 
 enum CustomError: Error {
     case genericError(_ message: String)
@@ -107,13 +107,14 @@ struct Song: Sendable, Identifiable, Equatable {
     let artist: String
     let title: String
     let album: String
+
+    let albumArtist: String
+    let releaseYear: Int?
+    let discNumber: Int?
+
     // trackNumber property for album order
     let trackNumber: Int?
-
-    /// e.g. "cover-XYZ.jpg" or nil if none
     let coverArtPath: String?
-
-    /// Security-scoped bookmark for the actual file
     var bookmark: Data?
     var pathHash: Int64
 
@@ -128,6 +129,9 @@ struct Song: Sendable, Identifiable, Equatable {
             artist: artist,
             title: title,
             album: album,
+            albumArtist: albumArtist,
+            releaseYear: releaseYear,
+            discNumber: discNumber,
             trackNumber: trackNumber,
             coverArtPath: coverArtPath,
             bookmark: bookmark,
@@ -530,7 +534,8 @@ actor DefaultSongImportService: SongImportService {
             try await sourcePathRepo.updateFileHash(pathId: filePath.pathId, fileHash: fileHash)
 
             // 3) Read metadata
-            let (artist, title, album, trackNumber) = await readMetadataAVAsset(url: fileURL)
+            let (artist, title, album, albumArtist, releaseYear, trackNumber, discNumber) =
+                await readMetadataAVAsset(url: fileURL)
             let songKey = generateSongKey(artist: artist, title: title, album: album)
 
             // 4) Extract artwork
@@ -544,6 +549,9 @@ actor DefaultSongImportService: SongImportService {
                 artist: artist,
                 title: title,
                 album: album,
+                albumArtist: albumArtist,
+                releaseYear: releaseYear,
+                discNumber: discNumber,
                 trackNumber: trackNumber,
                 coverArtPath: coverArtPath,
                 bookmark: try createBookmark(for: fileURL),
@@ -627,7 +635,8 @@ actor DefaultSongImportService: SongImportService {
     // MARK: - Read metadata (iOS 16+)
     @available(iOS 16.0, *)
     func readMetadataAVAsset(url: URL) async -> (
-        artist: String, title: String, album: String, trackNumber: Int?
+        artist: String, title: String, album: String,
+        albumArtist: String, releaseYear: Int?, trackNumber: Int?, discNumber: Int?
     ) {
         let asset = AVURLAsset(url: url)
         var defaultSongTitle = url.lastPathComponent
@@ -639,6 +648,10 @@ actor DefaultSongImportService: SongImportService {
             var title = ""
             var album = ""
             var trackNumber: Int? = nil
+
+            var albumArtist = ""
+            var releaseYear: Int? = nil
+            var discNumber: Int? = nil
 
             let formats = try await asset.load(.availableMetadataFormats)
             for format in formats {
@@ -662,15 +675,19 @@ actor DefaultSongImportService: SongImportService {
                         }
                     }
 
-                    let itemKey = item.key as? String
-                    if let key = itemKey {
-                        switch key {
-                        case "TRCK":  // Track number
+                    if let keyStr = item.key as? String {
+                        switch keyStr {
+                        case "TDRC":  // ID3 release time
+                            if let val = try? await item.load(.stringValue),
+                                let year = Int(val.prefix(4))
+                            {
+                                releaseYear = year
+                            }
+                        case "TPOS":  // ID3 disc number
                             if let val = try? await item.load(.stringValue) {
-                                // Handle formats like "5" or "5/12"
-                                let cleanString = val.components(separatedBy: "/").first ?? val
-                                if let number = Int(cleanString) {
-                                    trackNumber = number
+                                let parts = val.components(separatedBy: "/")
+                                if let disc = Int(parts[0]) {
+                                    discNumber = disc
                                 }
                             }
                         default:
@@ -678,17 +695,32 @@ actor DefaultSongImportService: SongImportService {
                         }
                     }
 
+                    // Also check for track number in string format "5/12"
+                    if let itemKey = item.key as? String, itemKey == "TRCK", trackNumber == nil {
+                        if let val = try? await item.load(.stringValue) {
+                            let cleanString = val.components(separatedBy: "/").first ?? val
+                            if let number = Int(cleanString) { trackNumber = number }
+                        }
+                    }
                 }
             }
 
             let cleanedArtist = artist.isEmpty ? "Unknown Artist" : artist
             let cleanedTitle = title.isEmpty ? defaultSongTitle : title
             let cleanedAlbum = album.isEmpty ? "Unknown Album" : album
+            // Fallback for albumArtist if not provided.
+            let cleanedAlbumArtist = albumArtist.isEmpty ? cleanedArtist : albumArtist
 
-            return (cleanedArtist, cleanedTitle, cleanedAlbum, trackNumber)
+            return (
+                cleanedArtist, cleanedTitle, cleanedAlbum, cleanedAlbumArtist, releaseYear,
+                trackNumber, discNumber
+            )
+
         } catch {
             logger.error("Failed to read metadata: \(error)")
-            return ("Unknown Artist", defaultSongTitle, "Unknown Album", nil)
+            return (
+                "Unknown Artist", defaultSongTitle, "Unknown Album", "Unknown Artist", nil, nil, nil
+            )
         }
     }
 
@@ -1888,12 +1920,15 @@ actor SQLiteSongRepository: SongRepository {
     private let colArtist: SQLite.Expression<String>
     private let colTitle: SQLite.Expression<String>
     private let colAlbum: SQLite.Expression<String>
+    private let colAlbumArtist: SQLite.Expression<String>  // NEW
+    private let colReleaseYear: SQLite.Expression<Int?>  // NEW
+    private let colDiscNumber: SQLite.Expression<Int?>  // NEW
     private let colTrackNumber: SQLite.Expression<Int?>
     private let colCoverArtPath: SQLite.Expression<String?>
-    private let colBookmark: SQLite.Expression<Blob?>  // We'll store as Blob, parse to Data
-    private let colPathHash: SQLite.Expression<Int64>  // We'll store as Blob, parse to Data
-    private let colCreatedAt: SQLite.Expression<Double>  // store date as epoch seconds
-    private let colUpdatedAt: SQLite.Expression<Double?>  // optional date
+    private let colBookmark: SQLite.Expression<Blob?>
+    private let colPathHash: SQLite.Expression<Int64>
+    private let colCreatedAt: SQLite.Expression<Double>
+    private let colUpdatedAt: SQLite.Expression<Double?>
 
     // MARK: - FTS table
     private let ftsSongsTable = Table("songs_fts")
@@ -1901,6 +1936,7 @@ actor SQLiteSongRepository: SongRepository {
     private let colFtsArtist = SQLite.Expression<String>("artist")
     private let colFtsTitle = SQLite.Expression<String>("title")
     private let colFtsAlbum = SQLite.Expression<String>("album")
+    private let colFtsAlbumArtist = SQLite.Expression<String>("albumArtist")  // NEW
 
     // MARK: - Init
     init(db: Connection) throws {
@@ -1912,6 +1948,9 @@ actor SQLiteSongRepository: SongRepository {
         let colArtist = SQLite.Expression<String>("artist")
         let colTitle = SQLite.Expression<String>("title")
         let colAlbum = SQLite.Expression<String>("album")
+        let colAlbumArtist = SQLite.Expression<String>("albumArtist")  // NEW
+        let colReleaseYear = SQLite.Expression<Int?>("releaseYear")  // NEW
+        let colDiscNumber = SQLite.Expression<Int?>("discNumber")  // NEW
         let colTrackNumber = SQLite.Expression<Int?>("trackNumber")
         let colCoverArtPath = SQLite.Expression<String?>("coverArtPath")
         let colBookmark = SQLite.Expression<Blob?>("bookmark")
@@ -1924,6 +1963,9 @@ actor SQLiteSongRepository: SongRepository {
         self.colArtist = colArtist
         self.colTitle = colTitle
         self.colAlbum = colAlbum
+        self.colAlbumArtist = colAlbumArtist  // NEW
+        self.colReleaseYear = colReleaseYear  // NEW
+        self.colDiscNumber = colDiscNumber  // NEW
         self.colTrackNumber = colTrackNumber
         self.colCoverArtPath = colCoverArtPath
         self.colBookmark = colBookmark
@@ -1939,6 +1981,9 @@ actor SQLiteSongRepository: SongRepository {
                 t.column(colArtist)
                 t.column(colTitle)
                 t.column(colAlbum)
+                t.column(colAlbumArtist)  // NEW
+                t.column(colReleaseYear)  // NEW
+                t.column(colDiscNumber)  // NEW
                 t.column(colTrackNumber)
                 t.column(colCoverArtPath)
                 t.column(colBookmark)
@@ -1948,7 +1993,7 @@ actor SQLiteSongRepository: SongRepository {
             }
         )
 
-        // Create FTS table
+        // Create FTS table with albumArtist column included
         try db.execute(
             """
             CREATE VIRTUAL TABLE IF NOT EXISTS songs_fts
@@ -1957,9 +2002,11 @@ actor SQLiteSongRepository: SongRepository {
                 artist,
                 title,
                 album,
+                albumArtist,  -- NEW
                 tokenize='unicode61'
             );
-            """)
+            """
+        )
     }
 
     func getSongs(ids: [Int64]) async -> [Song] {
@@ -1971,6 +2018,9 @@ actor SQLiteSongRepository: SongRepository {
                 artist: row[colArtist],
                 title: row[colTitle],
                 album: row[colAlbum],
+                albumArtist: row[colAlbumArtist],  // NEW
+                releaseYear: row[colReleaseYear],  // NEW
+                discNumber: row[colDiscNumber],  // NEW
                 trackNumber: row[colTrackNumber],
                 coverArtPath: row[colCoverArtPath],
                 bookmark: (row[colBookmark]?.bytes).map { Data($0) },
@@ -1991,6 +2041,9 @@ actor SQLiteSongRepository: SongRepository {
                 artist: row[colArtist],
                 title: row[colTitle],
                 album: row[colAlbum],
+                albumArtist: row[colAlbumArtist],  // NEW
+                releaseYear: row[colReleaseYear],  // NEW
+                discNumber: row[colDiscNumber],  // NEW
                 trackNumber: row[colTrackNumber],
                 coverArtPath: row[colCoverArtPath],
                 bookmark: (row[colBookmark]?.bytes).map { Data($0) },
@@ -1999,8 +2052,8 @@ actor SQLiteSongRepository: SongRepository {
                 updatedAt: row[colUpdatedAt].map(Date.init(timeIntervalSince1970:))
             )
         }
-
     }
+
     func totalSongCount(query: String) async throws -> Int {
         if query.isEmpty {
             let countQuery = "SELECT COUNT(*) FROM songs;"
@@ -2029,16 +2082,15 @@ actor SQLiteSongRepository: SongRepository {
             return count
         }
     }
+
     // MARK: - Upsert
     func upsertSong(_ song: Song) async throws -> Song {
-        // We'll check if there's an existing row with the same "songKey"
+        // Check if there's an existing row with the same "songKey"
         let existingRow = try db.pluck(songsTable.filter(colSongKey == song.songKey))
-
         let now = Date().timeIntervalSince1970  // store as epoch double
-        if let row = existingRow {
-            // We have an existing row => update
-            let songId = row[colId]
 
+        if let row = existingRow {
+            let songId = row[colId]
             try db.run(
                 songsTable
                     .filter(colId == songId)
@@ -2046,38 +2098,40 @@ actor SQLiteSongRepository: SongRepository {
                         colArtist <- song.artist,
                         colTitle <- song.title,
                         colAlbum <- song.album,
+                        colAlbumArtist <- song.albumArtist,  // NEW
+                        colReleaseYear <- song.releaseYear,  // NEW
+                        colDiscNumber <- song.discNumber,  // NEW
                         colTrackNumber <- song.trackNumber,
                         colCoverArtPath <- song.coverArtPath,
-                        colBookmark
-                            <- song.bookmark.map { data in
-                                Blob(bytes: [UInt8](data))
-                            },
+                        colBookmark <- song.bookmark.map { data in Blob(bytes: [UInt8](data)) },
                         colPathHash <- song.pathHash,
                         colUpdatedAt <- now
                     )
             )
 
-            // Update FTS
+            // Update FTS table
             try db.run(
                 ftsSongsTable
                     .filter(colFtsSongId == songId)
                     .update(
                         colFtsArtist <- song.artist,
                         colFtsTitle <- song.title,
-                        colFtsAlbum <- song.album
+                        colFtsAlbum <- song.album,
+                        colFtsAlbumArtist <- song.albumArtist  // NEW
                     )
             )
 
             return song.copyWith(id: songId)
-
         } else {
-            // Insert new
             let rowId = try db.run(
                 songsTable.insert(
                     colSongKey <- song.songKey,
                     colArtist <- song.artist,
                     colTitle <- song.title,
                     colAlbum <- song.album,
+                    colAlbumArtist <- song.albumArtist,  // NEW
+                    colReleaseYear <- song.releaseYear,  // NEW
+                    colDiscNumber <- song.discNumber,  // NEW
                     colTrackNumber <- song.trackNumber,
                     colCoverArtPath <- song.coverArtPath,
                     colBookmark <- song.bookmark.map { Blob(bytes: [UInt8]($0)) },
@@ -2087,13 +2141,14 @@ actor SQLiteSongRepository: SongRepository {
                 )
             )
 
-            // Insert into FTS
+            // Insert into FTS table
             try db.run(
                 ftsSongsTable.insert(
                     colFtsSongId <- rowId,
                     colFtsArtist <- song.artist,
                     colFtsTitle <- song.title,
-                    colFtsAlbum <- song.album
+                    colFtsAlbum <- song.album,
+                    colFtsAlbumArtist <- song.albumArtist  // NEW
                 )
             )
             return song.copyWith(id: rowId)
@@ -2102,15 +2157,12 @@ actor SQLiteSongRepository: SongRepository {
 
     // MARK: - FTS Searching
     func searchSongsFTS(query: String, limit: Int, offset: Int) async throws -> [Song] {
-        // We'll do a raw SQL statement to get bm25 ordering if needed.
-        // We store date as Double, bookmark as Blob, so let's parse them carefully.
         var results = [Song]()
         let statement: Statement
         let sql: String
         let bindings: [Binding?]
 
         if query.isEmpty {
-            // Handle empty query - return all songs with default ordering
             sql = """
                 SELECT id, songKey, artist, title, album, trackNumber, coverArtPath, bookmark, pathHash, createdAt, updatedAt
                   FROM songs
@@ -2119,8 +2171,7 @@ actor SQLiteSongRepository: SongRepository {
                 """
             bindings = [limit, offset]
         } else {
-            // Handle normal FTS query
-            let processedQuery = preprocessFTSQuery(query)  // Preprocess here
+            let processedQuery = preprocessFTSQuery(query)
             sql = """
                 SELECT s.id, s.songKey, s.artist, s.title, s.album, s.trackNumber,
                        s.coverArtPath, s.bookmark, s.pathHash, s.createdAt, s.updatedAt
@@ -2134,7 +2185,6 @@ actor SQLiteSongRepository: SongRepository {
         }
 
         statement = try db.prepare(sql, bindings)
-
         for row in statement {
             guard let id = row[0] as? Int64 else { continue }
             let songKey = (row[1] as? Int64) ?? 0
@@ -2142,10 +2192,7 @@ actor SQLiteSongRepository: SongRepository {
             let title = (row[3] as? String) ?? ""
             let album = (row[4] as? String) ?? ""
             var trackNumber: Int? = nil
-            if let t = (row[5] as? Int64) {
-                trackNumber = Int(t)
-            }
-
+            if let t = (row[5] as? Int64) { trackNumber = Int(t) }
             let coverArtPath = row[6] as? String
             let bookmarkBlob = row[7] as? Blob
             let bookmarkData = bookmarkBlob.map { Data($0.bytes) }
@@ -2155,12 +2202,17 @@ actor SQLiteSongRepository: SongRepository {
             let updatedDouble = row[10] as? Double
             let updatedAt = updatedDouble.map { Date(timeIntervalSince1970: $0) }
 
+            // NOTE: FTS search doesn't return albumArtist, releaseYear, or discNumber,
+            // so these fields are left blank. You may consider an additional lookup if required.
             let song = Song(
                 id: id,
                 songKey: songKey,
                 artist: artist,
                 title: title,
                 album: album,
+                albumArtist: "",  // Not available from FTS result.
+                releaseYear: nil,  // Not available from FTS result.
+                discNumber: nil,  // Not available from FTS result.
                 trackNumber: trackNumber,
                 coverArtPath: coverArtPath,
                 bookmark: bookmarkData,
@@ -2178,7 +2230,6 @@ actor SQLiteSongRepository: SongRepository {
             .filter(colArtist != "")
             .group(colArtist)
         return try db.prepare(query).compactMap { $0[colArtist] }
-
     }
 
     func getAllAlbums() async throws -> [Album] {
@@ -2194,7 +2245,6 @@ actor SQLiteSongRepository: SongRepository {
                 GROUP BY album
                 ORDER BY album;
             """
-
         var albums = [Album]()
         for row in try db.prepare(query) {
             let albumName = row[0] as? String ?? ""
@@ -2202,7 +2252,6 @@ actor SQLiteSongRepository: SongRepository {
             let coverPath = row[2] as? String
             albums.append(Album(name: albumName, artist: artist, coverArtPath: coverPath))
         }
-
         return albums
     }
 
@@ -2213,9 +2262,7 @@ actor SQLiteSongRepository: SongRepository {
 
     func getSongsByAlbum(_ album: String, artist: String?) async throws -> [Song] {
         var query = songsTable.filter(colAlbum == album)
-        if let artist = artist {
-            query = query.filter(colArtist == artist)
-        }
+        if let artist = artist { query = query.filter(colArtist == artist) }
         return try parseSongsFromRows(db.prepare(query))
     }
 
@@ -2223,13 +2270,15 @@ actor SQLiteSongRepository: SongRepository {
         return rows.map { row in
             let bookmarkBlob = row[colBookmark]
             let bookmarkData = bookmarkBlob.map { Data($0.bytes) }
-
             return Song(
                 id: row[colId],
                 songKey: row[colSongKey],
                 artist: row[colArtist],
                 title: row[colTitle],
                 album: row[colAlbum],
+                albumArtist: row[colAlbumArtist],  // NEW
+                releaseYear: row[colReleaseYear],  // NEW
+                discNumber: row[colDiscNumber],  // NEW
                 trackNumber: row[colTrackNumber],
                 coverArtPath: row[colCoverArtPath],
                 bookmark: bookmarkData,
@@ -2358,7 +2407,8 @@ actor SQLitePlaylistSongRepository: PlaylistSongRepository {
                 t.column(colSongId)
                 t.column(colPosition)
                 t.unique(colPlaylistId, colSongId)  // Prevent duplicates
-            })
+            }
+        )
 
         self.colId = colId
         self.colPlaylistId = colPlaylistId
@@ -2403,11 +2453,12 @@ actor SQLitePlaylistSongRepository: PlaylistSongRepository {
                 artist: row[songsTable[Expression<String>("artist")]],
                 title: row[songsTable[Expression<String>("title")]],
                 album: row[songsTable[Expression<String>("album")]],
+                albumArtist: row[songsTable[Expression<String>("albumArtist")]],  // NEW
+                releaseYear: row[songsTable[Expression<Int?>("releaseYear")]],  // NEW
+                discNumber: row[songsTable[Expression<Int?>("discNumber")]],  // NEW
                 trackNumber: row[songsTable[Expression<Int?>("trackNumber")]],
                 coverArtPath: row[songsTable[Expression<String?>("coverArtPath")]],
-                bookmark: (row[songsTable[SQLite.Expression<Blob?>("bookmark")]]?.bytes).map {
-                    Data($0)
-                },
+                bookmark: (row[songsTable[SQLite.Expression<Blob?>("bookmark")]]?.bytes).map { Data($0) },
                 pathHash: row[songsTable[Expression<Int64>("pathHash")]],
                 createdAt: Date(
                     timeIntervalSince1970: row[songsTable[Expression<Double>("createdAt")]]),
@@ -2434,6 +2485,7 @@ actor SQLitePlaylistSongRepository: PlaylistSongRepository {
     }
 }
 
+// MARK: - Complete SQLitePlaylistSongRepository implementation
 @MainActor
 class DependencyContainer: ObservableObject {
     let userService: UserService
