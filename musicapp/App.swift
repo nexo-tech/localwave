@@ -289,6 +289,8 @@ protocol SongRepository {
     func getSongs(ids: [Int64]) async -> [Song]
     func getSongByURL(_ url: URL) async -> Song?
     func updateBookmark(songId: Int64, bookmark: Data) async throws
+    func deleteSong(songId: Int64) async throws  // NEW
+    func deleteAlbum(album: String, artist: String?) async throws  // NEW
 }
 
 protocol SourceImportService {
@@ -640,7 +642,7 @@ actor DefaultSongImportService: SongImportService {
     ) {
         let asset = AVURLAsset(url: url)
         var defaultSongTitle = url.lastPathComponent
-        if defaultSongTitle == "" {
+        if defaultSongTitle.isEmpty {
             defaultSongTitle = "Unknown Title"
         }
         do {
@@ -656,66 +658,64 @@ actor DefaultSongImportService: SongImportService {
             let formats = try await asset.load(.availableMetadataFormats)
             for format in formats {
                 let metadata = try await asset.loadMetadata(for: format)
-
                 for item in metadata {
+                    // First check common keys
                     if let commonKey = item.commonKey {
                         switch commonKey {
-                        case .commonKeyArtist where artist == "":
+                        case .commonKeyArtist where artist.isEmpty:
                             if let val = try? await item.load(.stringValue) { artist = val }
-                        case .commonKeyTitle where title == "":
+                        case .commonKeyTitle where title.isEmpty:
                             if let val = try? await item.load(.stringValue) { title = val }
-                        case .commonKeyAlbumName where album == "":
+                        case .commonKeyAlbumName where album.isEmpty:
                             if let val = try? await item.load(.stringValue) { album = val }
-                        case .id3MetadataKeyTrackNumber where trackNumber == nil:
-                            if let val = try? await item.load(.numberValue) {
-                                trackNumber = val.intValue
-                            }
                         default:
                             break
                         }
                     }
-
+                    // Then check ID3 or format-specific keys
                     if let keyStr = item.key as? String {
-                        switch keyStr {
-                        case "TDRC":  // ID3 release time
+                        // Album Artist: check common ID3 keys
+                        if (keyStr == "TPE2" || keyStr == "aART") && albumArtist.isEmpty {
+                            if let val = try? await item.load(.stringValue) { albumArtist = val }
+                        }
+                        // Release Year
+                        if keyStr == "TDRC" && releaseYear == nil {
                             if let val = try? await item.load(.stringValue),
                                 let year = Int(val.prefix(4))
                             {
                                 releaseYear = year
                             }
-                        case "TPOS":  // ID3 disc number
+                        }
+                        // Disc Number
+                        if keyStr == "TPOS" && discNumber == nil {
                             if let val = try? await item.load(.stringValue) {
                                 let parts = val.components(separatedBy: "/")
                                 if let disc = Int(parts[0]) {
                                     discNumber = disc
                                 }
                             }
-                        default:
-                            break
                         }
-                    }
-
-                    // Also check for track number in string format "5/12"
-                    if let itemKey = item.key as? String, itemKey == "TRCK", trackNumber == nil {
-                        if let val = try? await item.load(.stringValue) {
-                            let cleanString = val.components(separatedBy: "/").first ?? val
-                            if let number = Int(cleanString) { trackNumber = number }
+                        // Track Number (ID3 TRCK key)
+                        if keyStr == "TRCK" && trackNumber == nil {
+                            if let val = try? await item.load(.stringValue) {
+                                let cleanString = val.components(separatedBy: "/").first ?? val
+                                if let number = Int(cleanString) { trackNumber = number }
+                            }
                         }
                     }
                 }
             }
 
+            // Fallbacks if values are still empty
             let cleanedArtist = artist.isEmpty ? "Unknown Artist" : artist
             let cleanedTitle = title.isEmpty ? defaultSongTitle : title
             let cleanedAlbum = album.isEmpty ? "Unknown Album" : album
-            // Fallback for albumArtist if not provided.
             let cleanedAlbumArtist = albumArtist.isEmpty ? cleanedArtist : albumArtist
 
             return (
                 cleanedArtist, cleanedTitle, cleanedAlbum, cleanedAlbumArtist, releaseYear,
                 trackNumber, discNumber
             )
-
         } catch {
             logger.error("Failed to read metadata: \(error)")
             return (
@@ -2085,10 +2085,8 @@ actor SQLiteSongRepository: SongRepository {
 
     // MARK: - Upsert
     func upsertSong(_ song: Song) async throws -> Song {
-        // Check if there's an existing row with the same "songKey"
         let existingRow = try db.pluck(songsTable.filter(colSongKey == song.songKey))
-        let now = Date().timeIntervalSince1970  // store as epoch double
-
+        let now = Date().timeIntervalSince1970
         if let row = existingRow {
             let songId = row[colId]
             try db.run(
@@ -2108,8 +2106,6 @@ actor SQLiteSongRepository: SongRepository {
                         colUpdatedAt <- now
                     )
             )
-
-            // Update FTS table
             try db.run(
                 ftsSongsTable
                     .filter(colFtsSongId == songId)
@@ -2120,7 +2116,6 @@ actor SQLiteSongRepository: SongRepository {
                         colFtsAlbumArtist <- song.albumArtist  // NEW
                     )
             )
-
             return song.copyWith(id: songId)
         } else {
             let rowId = try db.run(
@@ -2140,8 +2135,6 @@ actor SQLiteSongRepository: SongRepository {
                     colUpdatedAt <- song.updatedAt?.timeIntervalSince1970
                 )
             )
-
-            // Insert into FTS table
             try db.run(
                 ftsSongsTable.insert(
                     colFtsSongId <- rowId,
@@ -2152,6 +2145,27 @@ actor SQLiteSongRepository: SongRepository {
                 )
             )
             return song.copyWith(id: rowId)
+        }
+    }
+
+    // NEW: Delete a song (clean up main and FTS tables)
+    func deleteSong(songId: Int64) async throws {
+        let query = songsTable.filter(colId == songId)
+        try db.run(query.delete())
+        try db.run(ftsSongsTable.filter(colFtsSongId == songId).delete())
+    }
+
+    // NEW: Delete an album (and clean up FTS entries)
+    func deleteAlbum(album: String, artist: String?) async throws {
+        var query = songsTable.filter(colAlbum == album)
+        if let artist = artist {
+            query = query.filter(colArtist == artist)
+        }
+        // Retrieve song IDs for FTS cleanup
+        let songIds = try db.prepare(query).map { row in row[colId] }
+        try db.run(query.delete())
+        for songId in songIds {
+            try db.run(ftsSongsTable.filter(colFtsSongId == songId).delete())
         }
     }
 
@@ -2201,9 +2215,7 @@ actor SQLiteSongRepository: SongRepository {
             let createdAt = Date(timeIntervalSince1970: createdDouble)
             let updatedDouble = row[10] as? Double
             let updatedAt = updatedDouble.map { Date(timeIntervalSince1970: $0) }
-
-            // NOTE: FTS search doesn't return albumArtist, releaseYear, or discNumber,
-            // so these fields are left blank. You may consider an additional lookup if required.
+            // NOTE: FTS search doesn't return albumArtist, releaseYear, or discNumber.
             let song = Song(
                 id: id,
                 songKey: songKey,
@@ -2458,7 +2470,9 @@ actor SQLitePlaylistSongRepository: PlaylistSongRepository {
                 discNumber: row[songsTable[Expression<Int?>("discNumber")]],  // NEW
                 trackNumber: row[songsTable[Expression<Int?>("trackNumber")]],
                 coverArtPath: row[songsTable[Expression<String?>("coverArtPath")]],
-                bookmark: (row[songsTable[SQLite.Expression<Blob?>("bookmark")]]?.bytes).map { Data($0) },
+                bookmark: (row[songsTable[SQLite.Expression<Blob?>("bookmark")]]?.bytes).map {
+                    Data($0)
+                },
                 pathHash: row[songsTable[Expression<Int64>("pathHash")]],
                 createdAt: Date(
                     timeIntervalSince1970: row[songsTable[Expression<Double>("createdAt")]]),

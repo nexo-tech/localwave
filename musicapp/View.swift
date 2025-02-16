@@ -185,6 +185,11 @@ struct SongRow: View {
     let song: Song
     let onPlay: () -> Void
 
+    var onDelete: (() -> Void)? = nil
+    var onAddToPlaylist: (() -> Void)? = nil
+    var onEditMetadata: (() -> Void)? = nil
+    var onAddToQueue: (() -> Void)? = nil
+
     var body: some View {
         HStack {
             VStack(alignment: .leading) {
@@ -206,6 +211,104 @@ struct SongRow: View {
             onPlay()
         }
         .padding(.vertical, 4)
+        .contextMenu {
+            Button("Add to Queue") {
+                onAddToQueue?()
+            }
+            Button("Delete Song", role: .destructive) {
+                onDelete?()
+            }
+            Button("Add to Playlist") {
+                onAddToPlaylist?()
+            }
+            Button("Edit Metadata") {
+                onEditMetadata?()
+            }
+        }
+    }
+}
+
+struct SongMetadataEditorView: View {
+    @Environment(\.dismiss) var dismiss
+    let song: Song
+    let songRepo: SongRepository
+    @State private var title: String
+    @State private var artist: String
+    @State private var album: String
+    @State private var albumArtist: String
+    @State private var releaseYear: String
+    @State private var discNumber: String
+    @State private var trackNumber: String
+
+    private let logger = Logger(subsystem: subsystem, category: "SongMetadataEditorView")
+
+    init(song: Song, songRepo: SongRepository) {
+        self.song = song
+        self.songRepo = songRepo
+        _title = State(initialValue: song.title)
+        _artist = State(initialValue: song.artist)
+        _album = State(initialValue: song.album)
+        _albumArtist = State(initialValue: song.albumArtist)
+        _releaseYear = State(initialValue: song.releaseYear != nil ? "\(song.releaseYear!)" : "")
+        _discNumber = State(initialValue: song.discNumber != nil ? "\(song.discNumber!)" : "")
+        _trackNumber = State(initialValue: song.trackNumber != nil ? "\(song.trackNumber!)" : "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section(header: Text("Basic Info")) {
+                    TextField("Title", text: $title)
+                    TextField("Artist", text: $artist)
+                    TextField("Album", text: $album)
+                    TextField("Album Artist", text: $albumArtist)
+                }
+                Section(header: Text("Additional Info")) {
+                    TextField("Release Year", text: $releaseYear)
+                        .keyboardType(.numberPad)
+                    TextField("Disc Number", text: $discNumber)
+                        .keyboardType(.numberPad)
+                    TextField("Track Number", text: $trackNumber)
+                        .keyboardType(.numberPad)
+                }
+            }
+            .navigationTitle("Edit Metadata")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        Task {
+                            let updatedSong = Song(
+                                id: song.id,
+                                songKey: song.songKey,
+                                artist: artist,
+                                title: title,
+                                album: album,
+                                albumArtist: albumArtist,
+                                releaseYear: Int(releaseYear),
+                                discNumber: Int(discNumber),
+                                trackNumber: Int(trackNumber),
+                                coverArtPath: song.coverArtPath,
+                                bookmark: song.bookmark,
+                                pathHash: song.pathHash,
+                                createdAt: song.createdAt,
+                                updatedAt: Date()
+                            )
+                            do {
+                                _ = try await songRepo.upsertSong(updatedSong)
+                                NotificationCenter.default.post(
+                                    name: Notification.Name("SongListRefresh"), object: nil)
+                                dismiss()
+                            } catch {
+                                logger.error("failed to upsert: \(error)")
+                            }
+                        }
+                    }
+                }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+        }
     }
 }
 
@@ -238,7 +341,7 @@ class SongListViewModel: ObservableObject {
         self.filter = filter
     }
 
-    private func reset() {
+    func reset() {
         currentPage = 0
         songs = []
         hasMorePages = true
@@ -385,6 +488,7 @@ class SongListViewModel: ObservableObject {
         reset()
         do {
             let initialSongs = try await loadFilteredSongs()
+            songs = initialSongs  // Overwrite the array
             if case .album = filter {
                 songs = initialSongs.sorted { (s1, s2) in
                     if let t1 = s1.trackNumber, let t2 = s2.trackNumber {
@@ -411,10 +515,16 @@ class SongListViewModel: ObservableObject {
 // MARK: - Updated SongListView with Player Integration & Persistent Search
 struct SongListView: View {
     @EnvironmentObject private var tabState: TabState
+    @EnvironmentObject private var dependencies: DependencyContainer
+
     @ObservedObject private var viewModel: SongListViewModel
     @State private var searchText: String = ""
     @State private var isPlayerPresented: Bool = false
     @EnvironmentObject private var playerVM: PlayerViewModel
+    @State private var songToEdit: Song? = nil
+
+    @State private var showingPlaylistSelection = false
+    @State private var songForPlaylist: Song? = nil
 
     private let logger = Logger(subsystem: subsystem, category: "SongListView")
 
@@ -452,6 +562,25 @@ struct SongListView: View {
                                 playerVM.configureQueue(
                                     songs: viewModel.songs, startIndex: index)
                                 playerVM.playSong(song)
+                            },
+                            onDelete: {
+                                Task {
+                                    if let songId = song.id {
+                                        try? await dependencies.songRepository.deleteSong(
+                                            songId: songId)
+                                        await viewModel.loadInitialSongs()
+                                    }
+                                }
+                            },
+                            onAddToPlaylist: {
+                                songForPlaylist = song
+                                showingPlaylistSelection = true
+                            },
+                            onEditMetadata: {
+                                songToEdit = song
+                            },
+                            onAddToQueue: {
+                                playerVM.addToQueue(song)
                             }
                         )
                         .onAppear {
@@ -477,6 +606,26 @@ struct SongListView: View {
                     await viewModel.searchSongs(query: searchText)
                 }
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("SongListRefresh")))
+        { _ in
+            Task { await viewModel.loadInitialSongs() }
+        }
+        .onDisappear {
+            viewModel.reset()  // Clears the songs array and resets pagination.
+        }
+        .sheet(isPresented: $showingPlaylistSelection) {
+            if let song = songForPlaylist {
+                PlaylistSelectionView(
+                    song: song,
+                    songRepo: dependencies.songRepository,
+                    playlistRepo: dependencies.playlistRepo,
+                    playlistSongRepo: dependencies.playlistSongRepo
+                )
+            }
+        }
+        .sheet(item: $songToEdit) { song in
+            SongMetadataEditorView(song: song, songRepo: dependencies.songRepository)
         }
     }
 
@@ -509,6 +658,106 @@ struct SongListView: View {
     }
 }
 
+struct PlaylistSelectionView: View {
+    let song: Song
+    @StateObject private var viewModel: PlaylistListViewModel
+    @Environment(\.dismiss) var dismiss
+
+    init(
+        song: Song, songRepo: SongRepository, playlistRepo: PlaylistRepository,
+        playlistSongRepo: PlaylistSongRepository
+    ) {
+        self.song = song
+        _viewModel = StateObject(
+            wrappedValue: PlaylistListViewModel(
+                playlistRepo: playlistRepo,
+                playlistSongRepo: playlistSongRepo,
+                songRepo: songRepo  // Assuming access to song repo
+            )
+        )
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(viewModel.playlists) { playlist in
+                Button(playlist.name) {
+                    Task {
+                        guard let playlistId = playlist.id, let songId = song.id else { return }
+                        try? await viewModel.playlistSongRepo.addSong(
+                            playlistId: playlistId,
+                            songId: songId
+                        )
+                        dismiss()
+                    }
+                }
+            }
+            .navigationTitle("Select Playlist")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+            }
+            .onAppear {
+                Task { await viewModel.loadPlaylists() }
+            }
+        }
+    }
+}
+
+struct MiniPlayerViewInner: View {
+    let currentSong: Song?
+    let onTap: (() -> Void)
+    let playPauseAction: (() -> Void)
+    let isPlaying: Bool
+
+    var body: some View {
+        if currentSong != nil {
+            Button(action: {
+                onTap()
+            }) {
+                HStack {
+                    if let song = currentSong, let cover = coverArt(of: song) {
+                        Image(uiImage: cover)
+                            .resizable()
+                            .frame(width: 50, height: 50)
+                            .cornerRadius(5)
+                    } else {
+                        Image(systemName: "music.note")
+                            .scaleEffect(1.6)
+                            .frame(width: 50, height: 50)
+                            .cornerRadius(5)
+                    }
+
+                    VStack(alignment: .leading) {
+                        Text(currentSong?.title ?? "No Song")
+                        Text(
+                            "\(currentSong?.artist ?? "Unknown") - \(currentSong?.album ?? "")"
+                        )
+                        .font(Oxanium(14))
+                        .foregroundColor(.secondary)
+
+                    }
+                    Spacer()
+                    Button(action: playPauseAction) {
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 24))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .padding(.trailing, 15)
+                .background(Color(UIColor.secondarySystemBackground))
+                .overlay(
+                    Rectangle()
+                        .frame(height: 0.2)  // Height for the top border
+                        .foregroundColor(.secondary),
+                    alignment: .top  // Align to top
+                )
+            }
+            .buttonStyle(PlainButtonStyle())
+        }
+    }
+}
+
 struct MiniPlayerView: View {
     @EnvironmentObject private var playerVM: PlayerViewModel
     var onTap: () -> Void
@@ -516,7 +765,8 @@ struct MiniPlayerView: View {
     var body: some View {
         MiniPlayerViewInner(
             currentSong: playerVM.currentSong,
-            onTap: onTap, playPauseAction: { playerVM.playPause() }, isPlaying: playerVM.isPlaying)
+            onTap: onTap, playPauseAction: { playerVM.playPause() }, isPlaying: playerVM.isPlaying
+        )
     }
 }
 
@@ -582,7 +832,6 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     private let playerPersistenceService: PlayerPersistenceService?
 
-    // NEW:
     @Published var volume: Float = 0.5 {  // default volume now 0.5
         didSet {
             player?.volume = volume
@@ -628,6 +877,17 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         nextSong()
+    }
+
+    func addToQueue(_ song: Song) {
+        songs.append(song)
+        Task {
+            await self.playerPersistenceService?.savePlaybackState(
+                volume: self.volume,
+                currentIndex: self.currentIndex,
+                songs: self.songs
+            )
+        }
     }
 
     func configureQueue(songs: [Song], startIndex: Int) {
@@ -858,7 +1118,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         updateTimeDisplay()
     }
 
-    func setShuffle(_ enabled: Bool) {  // NEW
+    func setShuffle(_ enabled: Bool) {
         if enabled {
             if !isShuffleEnabled {
                 originalQueue = songs  // preserve original order
@@ -967,7 +1227,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     }
 }
 
-struct PlayerView: View {  // NEW: Updated layout for Winamp style
+struct PlayerView: View {
     @EnvironmentObject private var playerVM: PlayerViewModel
     @State private var showingQueue = false
     @State private var shuffleEnabled: Bool = false
@@ -975,7 +1235,7 @@ struct PlayerView: View {  // NEW: Updated layout for Winamp style
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        ZStack {  // NEW: Added background gradient
+        ZStack {
             LinearGradient(
                 gradient: Gradient(colors: [Color.purple.opacity(0.8), Color.blue.opacity(0.8)]),
                 startPoint: .topLeading,
@@ -989,7 +1249,7 @@ struct PlayerView: View {  // NEW: Updated layout for Winamp style
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark.circle.fill")
                             .font(.largeTitle)
-                            .foregroundColor(.white)  // NEW
+                            .foregroundColor(.white)
                     }
                 }
                 .padding(.top)
@@ -1003,23 +1263,23 @@ struct PlayerView: View {  // NEW: Updated layout for Winamp style
                                 .scaledToFit()
                                 .frame(maxWidth: 300, maxHeight: 300)
                                 .cornerRadius(8)
-                                .shadow(radius: 10)  // NEW
+                                .shadow(radius: 10)
                         } else {
                             Image(systemName: "music.note")
                                 .resizable()
                                 .scaledToFit()
                                 .frame(width: 200, height: 200)
-                                .foregroundColor(.white)  // NEW
+                                .foregroundColor(.white)
                         }
 
                         Text(song.title)
                             .font(.title)
                             .fontWeight(.bold)
-                            .foregroundColor(.white)  // NEW
+                            .foregroundColor(.white)
                             .padding(.top, 8)
                         Text(song.artist)
                             .font(.subheadline)
-                            .foregroundColor(.white.opacity(0.8))  // NEW
+                            .foregroundColor(.white.opacity(0.8))
                     }
                     .padding()
                 }
@@ -1035,7 +1295,7 @@ struct PlayerView: View {  // NEW: Updated layout for Winamp style
                         ),
                         in: 0...1
                     )
-                    .accentColor(.yellow)  // NEW
+                    .accentColor(.yellow)
                     .padding(.horizontal)
 
                     HStack {
@@ -1044,7 +1304,7 @@ struct PlayerView: View {  // NEW: Updated layout for Winamp style
                         Text(playerVM.duration)
                     }
                     .font(.caption)
-                    .foregroundColor(.white)  // NEW
+                    .foregroundColor(.white)
                     .padding(.horizontal)
                 }
                 .padding(.vertical)
@@ -1123,7 +1383,7 @@ struct PlayerView: View {  // NEW: Updated layout for Winamp style
                 if showingQueue {
                     ScrollView {
                         VStack(alignment: .leading) {
-                            ForEach(playerVM.queue.indices, id: \.self) { index in  // NEW
+                            ForEach(playerVM.queue.indices, id: \.self) { index in
                                 let song = playerVM.queue[index]
                                 HStack {
                                     Text("\(index + 1).")
@@ -1137,14 +1397,14 @@ struct PlayerView: View {  // NEW: Updated layout for Winamp style
                                             .foregroundColor(.white.opacity(0.8))
                                     }
                                     Spacer()
-                                    if song.id == playerVM.currentSong?.id {  // NEW
+                                    if song.id == playerVM.currentSong?.id {
                                         Image(systemName: "speaker.wave.2.fill")
                                             .foregroundColor(.green)
                                     }
                                 }
                                 .padding(.vertical, 4)
-                                .contentShape(Rectangle())  // NEW
-                                .onTapGesture {  // NEW
+                                .contentShape(Rectangle())
+                                .onTapGesture {
                                     playerVM.playSong(song)
                                 }
                             }
@@ -1314,7 +1574,6 @@ struct AlbumGridView: View {
             if viewModel.filteredAlbums.isEmpty {
                 emptyStateView
             } else {
-
                 LazyVGrid(columns: columns, spacing: 20) {
                     ForEach(viewModel.filteredAlbums) { album in
                         NavigationLink {
@@ -1327,6 +1586,10 @@ struct AlbumGridView: View {
                 }
                 .padding()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("AlbumListRefresh")))
+        { _ in
+            Task { try? await viewModel.loadAlbums() }
         }
     }
 
@@ -1351,6 +1614,7 @@ struct AlbumGridView: View {
 struct AlbumCell: View {
     let album: Album
     @State private var artwork: UIImage?
+    @EnvironmentObject private var dependencies: DependencyContainer
 
     var body: some View {
         VStack(alignment: .leading) {
@@ -1384,6 +1648,16 @@ struct AlbumCell: View {
         }
         .onAppear {
             loadArtwork()
+        }
+        .contextMenu {
+            Button("Delete Album", role: .destructive) {
+                Task {
+                    try? await dependencies.songRepository.deleteAlbum(
+                        album: album.name, artist: album.artist)
+                    NotificationCenter.default.post(
+                        name: Notification.Name("AlbumListRefresh"), object: nil)
+                }
+            }
         }
     }
 
