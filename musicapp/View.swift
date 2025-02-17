@@ -291,7 +291,9 @@ struct SongMetadataEditorView: View {
                                 bookmark: song.bookmark,
                                 pathHash: song.pathHash,
                                 createdAt: song.createdAt,
-                                updatedAt: Date()
+                                updatedAt: Date(),
+                                localFilePath: song.localFilePath,
+                                fileState: song.fileState
                             )
                             do {
                                 _ = try await songRepo.upsertSong(updatedSong)
@@ -1743,7 +1745,7 @@ struct LibraryView: View {
             }
         }
 
-        .onChange(of: tabState.selectedTab) { newTab in
+        .onChange(of: tabState.selectedTab) { newTab, _ in
             if newTab == 0 {  // library tab
                 Task {
                     do {
