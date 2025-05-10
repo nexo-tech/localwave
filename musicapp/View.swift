@@ -822,17 +822,45 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
     }
 
     private let songRepo: SongRepository?
-    init(playerPersistenceService: PlayerPersistenceService, songRepo: SongRepository) {
-        self.playerPersistenceService = playerPersistenceService
-        self.songRepo = songRepo
-        super.init()
-        setupAudioSession()
-        setupRemoteCommands()
-        setupInterruptionObserver()
+    private let playlistRepo: PlaylistRepository
+    private let playlistSongRepo: PlaylistSongRepository
+    private let playerPersistenceService: PlayerPersistenceService?
 
+    //    init(
+    //        playerPersistenceService: PlayerPersistenceService, songRepo: SongRepository,
+    //        playlistRepo: PlaylistRepository,
+    //        playlistSongRepo: PlaylistSongRepository
+    //    ) {
+    //      self.playerPersistenceService = playerPersistenceService
+    //      self.songRepo = songRepo
+    //      super.init()
+    //        setupAudioSession()
+    //        setupRemoteCommands()
+    //        setupInterruptionObserver()
+    //
+    //    }
+
+    func reorderQueue(from source: IndexSet, to destination: Int) {
+        songs.move(fromOffsets: source, toOffset: destination)
+        if let currentSong = currentSong {
+            currentIndex = songs.firstIndex { $0.id == currentSong.id } ?? 0
+        }
+        Task {
+            await playerPersistenceService?.savePlaybackState(
+                volume: volume, currentIndex: currentIndex, songs: songs)
+        }
     }
 
-    private let playerPersistenceService: PlayerPersistenceService?
+    func createPlaylist(name: String) async throws {
+        let newPlaylist = Playlist(id: nil, name: name, createdAt: Date(), updatedAt: nil)
+        let createdPlaylist = try await playlistRepo.create(playlist: newPlaylist)
+        guard let playlistId = createdPlaylist.id else { return }
+
+        for song in songs {
+            guard let songId = song.id else { continue }
+            try await playlistSongRepo.addSong(playlistId: playlistId, songId: songId)
+        }
+    }
 
     @Published var volume: Float = 0.5 {  // default volume now 0.5
         didSet {
@@ -844,10 +872,16 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         }
     }
 
-    init(playerPersistenceService: PlayerPersistenceService? = nil, songRepo: SongRepository? = nil)
-    {
+    init(
+        playerPersistenceService: PlayerPersistenceService? = nil,
+        songRepo: SongRepository? = nil,
+        playlistRepo: PlaylistRepository,
+        playlistSongRepo: PlaylistSongRepository
+    ) {
         self.playerPersistenceService = playerPersistenceService
         self.songRepo = songRepo
+        self.playlistRepo = playlistRepo
+        self.playlistSongRepo = playlistSongRepo
         super.init()
         setupAudioSession()
         setupRemoteCommands()
@@ -1236,6 +1270,11 @@ struct PlayerView: View {
     @State private var repeatEnabled: Bool = false
     @Environment(\.dismiss) private var dismiss
 
+    // State for playlist creation
+    @State private var showingPlaylistAlert = false
+    @State private var playlistName = ""
+    @State private var editMode = EditMode.inactive
+
     var body: some View {
         ZStack {
             LinearGradient(
@@ -1255,7 +1294,6 @@ struct PlayerView: View {
                     }
                 }
                 .padding(.top)
-
                 // Artwork and Song Info Section
                 if let song = playerVM.currentSong {
                     VStack {
@@ -1410,13 +1448,35 @@ struct PlayerView: View {
                                     playerVM.playSong(song)
                                 }
                             }
+                            .onMove { indices, newOffset in
+                                playerVM.reorderQueue(from: indices, to: newOffset)
+                            }
                         }
+                        .environment(\.editMode, $editMode)
                         .padding()
                     }
                     .frame(maxHeight: 200)
                     .background(Color.black.opacity(0.2))
                     .cornerRadius(8)
                     .padding(.horizontal)
+                    .toolbar {
+                        ToolbarItemGroup(placement: .navigationBarTrailing) {
+                            Button("Save as Playlist") {
+                                showingPlaylistAlert = true
+                            }
+                            EditButton()
+                        }
+                    }
+                    .alert("New Playlist", isPresented: $showingPlaylistAlert) {
+                        TextField("Playlist Name", text: $playlistName)
+                        Button("Create") {
+                            Task {
+                                try await playerVM.createPlaylist(name: playlistName)
+                                playlistName = ""
+                            }
+                        }
+                        Button("Cancel", role: .cancel) {}
+                    }
                 }
 
                 Spacer()
@@ -2986,7 +3046,8 @@ struct musicappApp: App {
 
         _playerVM = StateObject(
             wrappedValue: PlayerViewModel(
-                playerPersistenceService: c.playerPersistenceService, songRepo: c.songRepository))
+                playerPersistenceService: c.playerPersistenceService, songRepo: c.songRepository,
+                playlistRepo: c.playlistRepo, playlistSongRepo: c.playlistSongRepo))
 
     }
 
