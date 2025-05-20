@@ -1,6 +1,7 @@
 import Foundation
-import SQLite
 import os
+import SQLite
+
 actor SQLitePlaylistSongRepository: PlaylistSongRepository {
     private let db: Connection
     private let table = Table("playlist_songs")
@@ -24,7 +25,7 @@ actor SQLitePlaylistSongRepository: PlaylistSongRepository {
                 t.column(colPlaylistId)
                 t.column(colSongId)
                 t.column(colPosition)
-                t.unique(colPlaylistId, colSongId)  // Prevent duplicates
+                t.unique(colPlaylistId, colSongId) // Prevent duplicates
             }
         )
 

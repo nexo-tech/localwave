@@ -1,7 +1,5 @@
 import Foundation
 
-
-
 protocol PlayerPersistenceService {
     func getVolume() async -> Float
     func restore() async -> ([Song], Int, Song?)?
@@ -20,7 +18,7 @@ protocol PlaylistSongRepository {
     func addSong(playlistId: Int64, songId: Int64) async throws
     func removeSong(playlistId: Int64, songId: Int64) async throws
     func getSongs(playlistId: Int64) async throws -> [Song]
-    func reorderSongs(playlistId: Int64, newOrder: [Int64]) async throws  // New
+    func reorderSongs(playlistId: Int64, newOrder: [Int64]) async throws // New
 }
 
 protocol SongRepository {
@@ -68,8 +66,6 @@ protocol SourceSyncService {
         -> Source?
 }
 
-
-
 protocol SongImportService {
     func importPaths(
         paths: [SourcePath],
@@ -86,6 +82,7 @@ protocol SourceService {
     func importService() -> SourceImportService
     func repository() -> SourceRepository
 }
+
 protocol SourcePathRepository {
     func getByParentId(sourceId: Int64, parentPathId: Int64?) async throws -> [SourcePath]
     func getByPathId(sourceId: Int64, pathId: Int64) async throws -> SourcePath?

@@ -1,6 +1,6 @@
+import AVFoundation
 import CryptoKit
 import os
-import AVFoundation
 import UIKit
 
 private enum ImageFormat {
@@ -75,7 +75,8 @@ actor DefaultSongImportService: SongImportService {
             resolvingBookmarkData: bookmarkData,
             options: [],
             relativeTo: nil,
-            bookmarkDataIsStale: &isStale)
+            bookmarkDataIsStale: &isStale
+        )
 
         // Refresh stale bookmark
         if isStale {
@@ -98,6 +99,7 @@ actor DefaultSongImportService: SongImportService {
         activeRootURLs.forEach { $1.stopAccessingSecurityScopedResource() }
         activeRootURLs.removeAll()
     }
+
     func importPaths(
         paths: [SourcePath],
         onProgress: ((Double, URL) async -> Void)? = nil
@@ -173,7 +175,6 @@ actor DefaultSongImportService: SongImportService {
                     logger.debug(
                         "Existing bookmark invalid, reprocessing: \(fileURL.lastPathComponent)")
                 }
-
             }
 
             // 2) Compute new file hash & store in DB
@@ -191,7 +192,7 @@ actor DefaultSongImportService: SongImportService {
             let coverArtPath = try storeCoverArtOnDiskDedup(coverArtData)
 
             // 5) Upsert into DB
-            let newSong = Song(
+            let newSong = try Song(
                 id: nil,
                 songKey: songKey,
                 artist: artist,
@@ -202,7 +203,7 @@ actor DefaultSongImportService: SongImportService {
                 discNumber: discNumber,
                 trackNumber: trackNumber,
                 coverArtPath: coverArtPath,
-                bookmark: try createBookmark(for: fileURL),
+                bookmark: createBookmark(for: fileURL),
                 pathHash: makeURLHash(fileURL),
                 createdAt: Date(),
                 updatedAt: nil,
@@ -216,6 +217,7 @@ actor DefaultSongImportService: SongImportService {
     }
 
     // MARK: - Recursively gather all file paths
+
     private func gatherAllFiles(paths: [SourcePath]) async throws -> [SourcePath] {
         var result = [SourcePath]()
         for p in paths {
@@ -223,7 +225,7 @@ actor DefaultSongImportService: SongImportService {
                 let children = try await sourcePathRepo.getByParentId(
                     sourceId: p.sourceId, parentPathId: p.pathId
                 )
-                result.append(contentsOf: try await gatherAllFiles(paths: children))
+                try result.append(contentsOf: await gatherAllFiles(paths: children))
             } else {
                 result.append(p)
             }
@@ -232,7 +234,9 @@ actor DefaultSongImportService: SongImportService {
     }
 
     // MARK: - Resolve file URL with caching
+
     // MARK: - File URL Resolution
+
     private func resolveFileURL(for path: SourcePath) async -> URL? {
         guard let rootURL = activeRootURLs[path.sourceId] else {
             logger.error("No root URL found for source \(path.sourceId)")
@@ -275,6 +279,7 @@ actor DefaultSongImportService: SongImportService {
     }
 
     // MARK: - Create a bookmark
+
     private func createBookmark(for fileURL: URL) throws -> Data {
         try fileURL.bookmarkData(
             options: [],
@@ -284,6 +289,7 @@ actor DefaultSongImportService: SongImportService {
     }
 
     // MARK: - Read metadata (iOS 16+)
+
     @available(iOS 16.0, *)
     func readMetadataAVAsset(url: URL) async -> (
         artist: String, title: String, album: String,
@@ -330,7 +336,7 @@ actor DefaultSongImportService: SongImportService {
                         // Release Year
                         if keyStr == "TDRC" && releaseYear == nil {
                             if let val = try? await item.load(.stringValue),
-                                let year = Int(val.prefix(4))
+                               let year = Int(val.prefix(4))
                             {
                                 releaseYear = year
                             }
@@ -374,6 +380,7 @@ actor DefaultSongImportService: SongImportService {
     }
 
     // MARK: - Extract cover art data (improved)
+
     @available(iOS 16.0, *)
     private func extractCoverArtData(url: URL) async -> Data? {
         let asset = AVURLAsset(url: url)
@@ -393,8 +400,8 @@ actor DefaultSongImportService: SongImportService {
 
                 // Handle URL references
                 if let stringValue = try? await item.load(.stringValue),
-                    let url = URL(string: stringValue),
-                    url.scheme == "http" || url.scheme == "https"
+                   let url = URL(string: stringValue),
+                   url.scheme == "http" || url.scheme == "https"
                 {
                     logger.debug("Found remote artwork URL: \(url.absoluteString)")
                     // Consider downloading here if appropriate
@@ -404,7 +411,7 @@ actor DefaultSongImportService: SongImportService {
             // Fallback: Check all metadata items regardless of key space
             for item in metadata {
                 if let dataValue = try? await item.load(.dataValue),
-                    isValidImageData(dataValue)
+                   isValidImageData(dataValue)
                 {
                     return dataValue
                 }
@@ -416,11 +423,13 @@ actor DefaultSongImportService: SongImportService {
     }
 
     // MARK: - Validate image data
+
     private func isValidImageData(_ data: Data) -> Bool {
         return UIImage(data: data) != nil
     }
 
     // MARK: - Store cover art with format detection
+
     private func storeCoverArtOnDiskDedup(_ data: Data?) throws -> String? {
         guard let data = data, !data.isEmpty else { return nil }
 
@@ -446,7 +455,8 @@ actor DefaultSongImportService: SongImportService {
         let coverArtDir = documentsDir.appendingPathComponent("CoverArt", isDirectory: true)
         if !FileManager.default.fileExists(atPath: coverArtDir.path) {
             try FileManager.default.createDirectory(
-                at: coverArtDir, withIntermediateDirectories: true)
+                at: coverArtDir, withIntermediateDirectories: true
+            )
         }
 
         let fileURL = coverArtDir.appendingPathComponent(filename)
@@ -464,6 +474,7 @@ actor DefaultSongImportService: SongImportService {
     }
 
     // MARK: - Utility: SHA256 for Data
+
     private func sha256(_ data: Data) -> Data {
         // If you're on iOS 13+, you can use CryptoKit. For brevity:
         var hasher = CryptoKit.SHA256()

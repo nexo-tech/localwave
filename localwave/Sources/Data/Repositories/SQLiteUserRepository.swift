@@ -1,6 +1,7 @@
 import Foundation
-import SQLite
 import os
+import SQLite
+
 let usersTableName = "users"
 
 actor SQLiteUserRepository: UserRepository {

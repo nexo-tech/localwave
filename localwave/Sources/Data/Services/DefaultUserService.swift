@@ -1,6 +1,7 @@
-import Foundation
 import AVFoundation
+import Foundation
 import os
+
 class DefaultUserService: UserService {
     let logger = Logger(subsystem: subsystem, category: "UserService")
     private var userRepository: UserRepository

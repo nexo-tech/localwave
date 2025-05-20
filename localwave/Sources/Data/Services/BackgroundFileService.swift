@@ -1,6 +1,6 @@
-import os
 import AVFoundation
 import CryptoKit
+import os
 
 actor BackgroundFileService {
     private let songRepo: SongRepository
@@ -27,7 +27,7 @@ actor BackgroundFileService {
                 logger.debug("beginning processing cycle")
                 await processQueue()
                 logger.debug("processing cycle completed")
-                try await Task.sleep(nanoseconds: 30 * 1_000_000_000)  // 30 seconds
+                try await Task.sleep(nanoseconds: 30 * 1_000_000_000) // 30 seconds
             }
         }
     }
@@ -40,7 +40,7 @@ actor BackgroundFileService {
             do {
                 logger.debug("attempting cop-y for song id \(song.id ?? -1)")
                 let updatedSong = try await attemptFileCopy(song: song)
-                let _ = try await songRepo.upsertSong(updatedSong)
+                _ = try await songRepo.upsertSong(updatedSong)
                 logger.debug("succesfully copied song id \(song.id ?? -1)")
             } catch {
                 logger.error("Failed to copy file for song \(song.id ?? -1): \(error)")
@@ -91,6 +91,6 @@ actor BackgroundFileService {
     private func markFailed(song: Song) async {
         var updated = song
         updated.fileState = .failed
-        let _ = try? await songRepo.upsertSong(updated)
+        _ = try? await songRepo.upsertSong(updated)
     }
 }

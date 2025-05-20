@@ -1,6 +1,6 @@
 import Foundation
-import SQLite
 import os
+import SQLite
 
 class DefaultICloudProvider: ICloudProvider {
     let logger = Logger(subsystem: subsystem, category: "ICloudProvider")
@@ -12,7 +12,8 @@ class DefaultICloudProvider: ICloudProvider {
         logger.debug("Attempting to get current iCloud user")
         if let ubiquityIdentityToken = FileManager.default.ubiquityIdentityToken {
             let tokenData = try NSKeyedArchiver.archivedData(
-                withRootObject: ubiquityIdentityToken, requiringSecureCoding: true)
+                withRootObject: ubiquityIdentityToken, requiringSecureCoding: true
+            )
             let tokenString = tokenData.base64EncodedString()
             let hashed = hashStringToInt64(tokenString)
             logger.debug("Current iCloud user token: \(hashed)")
@@ -22,5 +23,4 @@ class DefaultICloudProvider: ICloudProvider {
             return nil
         }
     }
-
 }

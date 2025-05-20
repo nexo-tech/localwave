@@ -1,6 +1,7 @@
 import Foundation
-import SQLite
 import os
+import SQLite
+
 class DefaultUserCloudService: UserCloudService {
     let logger = Logger(subsystem: subsystem, category: "UserCloudService")
     func resolveCurrentICloudUser() async throws -> User? {

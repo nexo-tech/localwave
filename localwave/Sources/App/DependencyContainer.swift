@@ -1,8 +1,9 @@
 import Foundation
-import SwiftUI
 import os
+import SwiftUI
 
 // MARK: - Complete SQLitePlaylistSongRepository implementation
+
 @MainActor
 class DependencyContainer: ObservableObject {
     let userService: UserService
@@ -46,34 +47,39 @@ class DependencyContainer: ObservableObject {
         let sourcePathSearchRepository = try SQLiteSourcePathSearchRepository(db: db)
         let songRepo = try SQLiteSongRepository(db: db)
 
-        self.userService = DefaultUserService(userRepository: userRepo)
-        self.icloudProvider = DefaultICloudProvider()
-        self.userCloudService = DefaultUserCloudService(
+        userService = DefaultUserService(userRepository: userRepo)
+        icloudProvider = DefaultICloudProvider()
+        userCloudService = DefaultUserCloudService(
             userService: userService,
-            iCloudProvider: icloudProvider)
+            iCloudProvider: icloudProvider
+        )
 
         let sourceSyncService = DefaultSourceSyncService(
             sourceRepository: sourceRepo,
             sourcePathSearchRepository: sourcePathSearchRepository,
-            sourcePathRepository: sourcePathRepo)
+            sourcePathRepository: sourcePathRepo
+        )
 
         let sourceImportService = DefaultSourceImportService(
             sourceRepository: sourceRepo,
             sourcePathRepository: sourcePathRepo,
-            sourcePathSearchRepository: sourcePathSearchRepository)
-        self.sourceService = DefaultSourceService(
+            sourcePathSearchRepository: sourcePathSearchRepository
+        )
+        sourceService = DefaultSourceService(
             sourceRepo: sourceRepo,
             sourceSyncService: sourceSyncService,
-            sourceImportService: sourceImportService)
-        self.songRepository = songRepo
-        self.songImportService = DefaultSongImportService(
+            sourceImportService: sourceImportService
+        )
+        songRepository = songRepo
+        songImportService = DefaultSongImportService(
             songRepo: songRepo,
             sourcePathRepo: sourcePathRepo,
-            sourceRepo: sourceRepo)
-        self.playerPersistenceService = DefaultPlayerPersistenceService(songRepo: songRepo)
-        self.playlistRepo = try SQLitePlaylistRepository(db: db)
-        self.playlistSongRepo = try SQLitePlaylistSongRepository(db: db)
-        self.backgroundFileService = BackgroundFileService(songRepo: songRepo)
+            sourceRepo: sourceRepo
+        )
+        playerPersistenceService = DefaultPlayerPersistenceService(songRepo: songRepo)
+        playlistRepo = try SQLitePlaylistRepository(db: db)
+        playlistSongRepo = try SQLitePlaylistSongRepository(db: db)
+        backgroundFileService = BackgroundFileService(songRepo: songRepo)
     }
 
     func makeSongListViewModel(filter: SongListViewModel.Filter) -> SongListViewModel {

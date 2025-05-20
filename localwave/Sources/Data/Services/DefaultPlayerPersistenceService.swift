@@ -1,5 +1,6 @@
 import Foundation
 import os
+
 actor DefaultPlayerPersistenceService: PlayerPersistenceService {
     private let queueKey = "currentQueue"
     private let currentIndexKey = "currentQueueIndex"
@@ -19,8 +20,8 @@ actor DefaultPlayerPersistenceService: PlayerPersistenceService {
 
     func restore() async -> ([Song], Int, Song?)? {
         guard let songIds = UserDefaults.standard.array(forKey: queueKey) as? [Int64],
-            let currentIndex = UserDefaults.standard.value(forKey: currentIndexKey) as? Int,
-            !songIds.isEmpty
+              let currentIndex = UserDefaults.standard.value(forKey: currentIndexKey) as? Int,
+              !songIds.isEmpty
         else {
             logger.debug("no persisted data, skipping")
             return nil

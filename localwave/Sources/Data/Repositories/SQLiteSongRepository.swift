@@ -1,7 +1,6 @@
 import Foundation
 import SQLite
 
-
 actor SQLiteSongRepository: SongRepository {
     func updateBookmark(songId: Int64, bookmark: Data) async throws {
         let query = songsTable.filter(colId == songId)
@@ -11,6 +10,7 @@ actor SQLiteSongRepository: SongRepository {
     private let db: Connection
 
     // MARK: - Main "songs" table
+
     private let songsTable = Table("songs")
 
     // Typed columns
@@ -29,10 +29,11 @@ actor SQLiteSongRepository: SongRepository {
     private let colCreatedAt: SQLite.Expression<Double>
     private let colUpdatedAt: SQLite.Expression<Double?>
     // NEW: new fields for localFilePath and fileState
-    private let colLocalFilePath: SQLite.Expression<String?>  // NEW
-    private let colFileState: SQLite.Expression<Int>  // NEW
+    private let colLocalFilePath: SQLite.Expression<String?> // NEW
+    private let colFileState: SQLite.Expression<Int> // NEW
 
     // MARK: - FTS table
+
     private let ftsSongsTable = Table("songs_fts")
     private let colFtsSongId = SQLite.Expression<Int64>("songId")
     private let colFtsArtist = SQLite.Expression<String>("artist")
@@ -41,6 +42,7 @@ actor SQLiteSongRepository: SongRepository {
     private let colFtsAlbumArtist = SQLite.Expression<String>("albumArtist")
 
     // MARK: - Init
+
     init(db: Connection) throws {
         self.db = db
 
@@ -60,8 +62,8 @@ actor SQLiteSongRepository: SongRepository {
         let colCreatedAt = SQLite.Expression<Double>("createdAt")
         let colUpdatedAt = SQLite.Expression<Double?>("updatedAt")
         // NEW: new expressions
-        let colLocalFilePath = SQLite.Expression<String?>("localFilePath")  // NEW
-        let colFileState = SQLite.Expression<Int>("fileState")  // NEW
+        let colLocalFilePath = SQLite.Expression<String?>("localFilePath") // NEW
+        let colFileState = SQLite.Expression<Int>("fileState") // NEW
 
         self.colId = colId
         self.colSongKey = colSongKey
@@ -78,8 +80,8 @@ actor SQLiteSongRepository: SongRepository {
         self.colCreatedAt = colCreatedAt
         self.colUpdatedAt = colUpdatedAt
         // NEW: assign new columns
-        self.colLocalFilePath = colLocalFilePath  // NEW
-        self.colFileState = colFileState  // NEW
+        self.colLocalFilePath = colLocalFilePath // NEW
+        self.colFileState = colFileState // NEW
 
         // Create main table if needed
         try db.run(
@@ -99,8 +101,8 @@ actor SQLiteSongRepository: SongRepository {
                 t.column(colCreatedAt)
                 t.column(colUpdatedAt)
                 // NEW: add new columns
-                t.column(colLocalFilePath)  // NEW
-                t.column(colFileState)  // NEW
+                t.column(colLocalFilePath) // NEW
+                t.column(colFileState) // NEW
             }
         )
 
@@ -139,8 +141,8 @@ actor SQLiteSongRepository: SongRepository {
                 createdAt: Date(timeIntervalSince1970: row[colCreatedAt]),
                 updatedAt: row[colUpdatedAt].map(Date.init(timeIntervalSince1970:)),
                 // NEW: add new fields
-                localFilePath: row[colLocalFilePath],  // NEW
-                fileState: FileState(rawValue: row[colFileState]) ?? .bookmarkOnly  // NEW
+                localFilePath: row[colLocalFilePath], // NEW
+                fileState: FileState(rawValue: row[colFileState]) ?? .bookmarkOnly // NEW
             )
         }
     }
@@ -165,8 +167,8 @@ actor SQLiteSongRepository: SongRepository {
                 createdAt: Date(timeIntervalSince1970: row[colCreatedAt]),
                 updatedAt: row[colUpdatedAt].map(Date.init(timeIntervalSince1970:)),
                 // NEW: add new fields
-                localFilePath: row[colLocalFilePath],  // NEW
-                fileState: FileState(rawValue: row[colFileState]) ?? .bookmarkOnly  // NEW
+                localFilePath: row[colLocalFilePath], // NEW
+                fileState: FileState(rawValue: row[colFileState]) ?? .bookmarkOnly // NEW
             )
         }
     }
@@ -174,7 +176,7 @@ actor SQLiteSongRepository: SongRepository {
     func totalSongCount(query: String) async throws -> Int {
         if query.isEmpty {
             let countQuery = "SELECT COUNT(*) FROM songs;"
-            var count: Int = 0
+            var count = 0
             for row in try db.prepare(countQuery) {
                 if let c = row[0] as? Int64 {
                     count = Int(c)
@@ -185,11 +187,11 @@ actor SQLiteSongRepository: SongRepository {
         } else {
             let processedQuery = preprocessFTSQuery(query)
             let countQuery = """
-                SELECT COUNT(*) FROM songs s
-                JOIN songs_fts fts ON s.id = fts.songId
-                WHERE songs_fts MATCH ?;
-                """
-            var count: Int = 0
+            SELECT COUNT(*) FROM songs s
+            JOIN songs_fts fts ON s.id = fts.songId
+            WHERE songs_fts MATCH ?;
+            """
+            var count = 0
             for row in try db.prepare(countQuery, processedQuery) {
                 if let c = row[0] as? Int64 {
                     count = Int(c)
@@ -201,6 +203,7 @@ actor SQLiteSongRepository: SongRepository {
     }
 
     // MARK: - Upsert
+
     func upsertSong(_ song: Song) async throws -> Song {
         let existingRow = try db.pluck(songsTable.filter(colSongKey == song.songKey))
         let now = Date().timeIntervalSince1970
@@ -222,8 +225,8 @@ actor SQLiteSongRepository: SongRepository {
                         colPathHash <- song.pathHash,
                         colUpdatedAt <- now,
                         // NEW: update new fields
-                        colLocalFilePath <- song.localFilePath,  // NEW
-                        colFileState <- song.fileState.rawValue  // NEW
+                        colLocalFilePath <- song.localFilePath, // NEW
+                        colFileState <- song.fileState.rawValue // NEW
                     )
             )
             try db.run(
@@ -254,8 +257,8 @@ actor SQLiteSongRepository: SongRepository {
                     colCreatedAt <- song.createdAt.timeIntervalSince1970,
                     colUpdatedAt <- song.updatedAt?.timeIntervalSince1970,
                     // NEW: insert new fields
-                    colLocalFilePath <- song.localFilePath,  // NEW
-                    colFileState <- song.fileState.rawValue  // NEW
+                    colLocalFilePath <- song.localFilePath, // NEW
+                    colFileState <- song.fileState.rawValue // NEW
                 )
             )
             try db.run(
@@ -291,6 +294,7 @@ actor SQLiteSongRepository: SongRepository {
     }
 
     // MARK: - FTS Searching
+
     func searchSongsFTS(query: String, limit: Int, offset: Int) async throws -> [Song] {
         var results = [Song]()
         let statement: Statement
@@ -299,23 +303,23 @@ actor SQLiteSongRepository: SongRepository {
 
         if query.isEmpty {
             sql = """
-                SELECT id, songKey, artist, title, album, trackNumber, coverArtPath, bookmark, pathHash, createdAt, updatedAt, localFilePath, fileState
-                  FROM songs
-                 ORDER BY createdAt DESC
-                 LIMIT ? OFFSET ?;
-                """  // NEW: added localFilePath and fileState
+            SELECT id, songKey, artist, title, album, trackNumber, coverArtPath, bookmark, pathHash, createdAt, updatedAt, localFilePath, fileState
+              FROM songs
+             ORDER BY createdAt DESC
+             LIMIT ? OFFSET ?;
+            """ // NEW: added localFilePath and fileState
             bindings = [limit, offset]
         } else {
             let processedQuery = preprocessFTSQuery(query)
             sql = """
-                SELECT s.id, s.songKey, s.artist, s.title, s.album, s.trackNumber,
-                       s.coverArtPath, s.bookmark, s.pathHash, s.createdAt, s.updatedAt, s.localFilePath, s.fileState
-                  FROM songs s
-                  JOIN songs_fts fts ON s.id = fts.songId
-                 WHERE songs_fts MATCH ?
-                 ORDER BY bm25(songs_fts)
-                 LIMIT ? OFFSET ?;
-                """  // NEW: added localFilePath and fileState
+            SELECT s.id, s.songKey, s.artist, s.title, s.album, s.trackNumber,
+                   s.coverArtPath, s.bookmark, s.pathHash, s.createdAt, s.updatedAt, s.localFilePath, s.fileState
+              FROM songs s
+              JOIN songs_fts fts ON s.id = fts.songId
+             WHERE songs_fts MATCH ?
+             ORDER BY bm25(songs_fts)
+             LIMIT ? OFFSET ?;
+            """ // NEW: added localFilePath and fileState
             bindings = [processedQuery, limit, offset]
         }
 
@@ -337,9 +341,9 @@ actor SQLiteSongRepository: SongRepository {
             let updatedDouble = row[10] as? Double
             let updatedAt = updatedDouble.map { Date(timeIntervalSince1970: $0) }
             // NEW: get new fields
-            let localFilePath = row[11] as? String  // NEW
-            let fileStateRaw = row[12] as? Int ?? FileState.bookmarkOnly.rawValue  // NEW
-            let fileState = FileState(rawValue: fileStateRaw) ?? .bookmarkOnly  // NEW
+            let localFilePath = row[11] as? String // NEW
+            let fileStateRaw = row[12] as? Int ?? FileState.bookmarkOnly.rawValue // NEW
+            let fileState = FileState(rawValue: fileStateRaw) ?? .bookmarkOnly // NEW
 
             // NOTE: FTS search doesn't return albumArtist, releaseYear, or discNumber.
             let song = Song(
@@ -348,9 +352,9 @@ actor SQLiteSongRepository: SongRepository {
                 artist: artist,
                 title: title,
                 album: album,
-                albumArtist: "",  // Not available from FTS result.
-                releaseYear: nil,  // Not available from FTS result.
-                discNumber: nil,  // Not available from FTS result.
+                albumArtist: "", // Not available from FTS result.
+                releaseYear: nil, // Not available from FTS result.
+                discNumber: nil, // Not available from FTS result.
                 trackNumber: trackNumber,
                 coverArtPath: coverArtPath,
                 bookmark: bookmarkData,
@@ -358,8 +362,8 @@ actor SQLiteSongRepository: SongRepository {
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 // NEW: new fields
-                localFilePath: localFilePath,  // NEW
-                fileState: fileState  // NEW
+                localFilePath: localFilePath, // NEW
+                fileState: fileState // NEW
             )
             results.append(song)
         }
@@ -375,17 +379,17 @@ actor SQLiteSongRepository: SongRepository {
 
     func getAllAlbums() async throws -> [Album] {
         let query = """
-                SELECT album, artist, coverArtPath
-                FROM songs AS s1
-                WHERE album != ''
-                  AND LENGTH(artist) = (
-                    SELECT MIN(LENGTH(artist))
-                    FROM songs AS s2
-                    WHERE s2.album = s1.album
-                )
-                GROUP BY album
-                ORDER BY album;
-            """
+            SELECT album, artist, coverArtPath
+            FROM songs AS s1
+            WHERE album != ''
+              AND LENGTH(artist) = (
+                SELECT MIN(LENGTH(artist))
+                FROM songs AS s2
+                WHERE s2.album = s1.album
+            )
+            GROUP BY album
+            ORDER BY album;
+        """
         var albums = [Album]()
         for row in try db.prepare(query) {
             let albumName = row[0] as? String ?? ""
@@ -427,8 +431,8 @@ actor SQLiteSongRepository: SongRepository {
                 createdAt: Date(timeIntervalSince1970: row[colCreatedAt]),
                 updatedAt: row[colUpdatedAt].map(Date.init(timeIntervalSince1970:)),
                 // NEW: add new fields
-                localFilePath: row[colLocalFilePath],  // NEW
-                fileState: FileState(rawValue: row[colFileState]) ?? .bookmarkOnly  // NEW
+                localFilePath: row[colLocalFilePath], // NEW
+                fileState: FileState(rawValue: row[colFileState]) ?? .bookmarkOnly // NEW
             )
         }
     }
@@ -437,8 +441,8 @@ actor SQLiteSongRepository: SongRepository {
     func getSongsNeedingCopy() async -> [Song] {
         let query = songsTable.filter(
             colFileState == FileState.bookmarkOnly.rawValue
-                || colFileState == FileState.failed.rawValue)  // NEW
-        return try! db.prepare(query).map { row in  // NEW
+                || colFileState == FileState.failed.rawValue) // NEW
+        return try! db.prepare(query).map { row in // NEW
             Song(
                 id: row[colId],
                 songKey: row[colSongKey],
@@ -464,6 +468,6 @@ actor SQLiteSongRepository: SongRepository {
     func markSongForCopy(songId: Int64) async throws {
         try db.run(
             songsTable.filter(colId == songId).update(
-                colFileState <- FileState.copyPending.rawValue))  // NEW
+                colFileState <- FileState.copyPending.rawValue)) // NEW
     }
 }

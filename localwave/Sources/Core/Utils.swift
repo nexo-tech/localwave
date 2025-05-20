@@ -1,8 +1,7 @@
 import AVFoundation
 import CryptoKit
-import SQLite
-import UIKit
 import os
+import SQLite
 
 let subsystem = "com.snowbear.localwave"
 let schemaVersion = 29
@@ -11,7 +10,11 @@ enum CustomError: Error {
     case genericError(_ message: String)
 }
 
-
+extension Collection {
+    subscript(safe index: Index) -> Element? {
+        return indices.contains(index) ? self[index] : nil
+    }
+}
 
 struct PathSearchResult {
     let pathId: Int64
@@ -21,8 +24,6 @@ struct PathSearchResult {
         self.rank = rank
     }
 }
-
-
 
 struct SourceSyncResult {
     let allItems: [SourceSyncResultItem]
@@ -39,13 +40,13 @@ struct SourceSyncResultItem {
 
     init(rootURL: URL, current: URL, isDirectory: Bool) {
         let fh = FileHelper(fileURL: current)
-        self.relativePath = fh.relativePath(from: rootURL) ?? ""
-        self.parentURL = fh.parent().flatMap {
+        relativePath = fh.relativePath(from: rootURL) ?? ""
+        parentURL = fh.parent().flatMap {
             $0
         }
-        self.url = current
+        url = current
         self.isDirectory = isDirectory
-        self.name = fh.name()
+        name = fh.name()
     }
 }
 
@@ -74,12 +75,11 @@ struct FileHelper {
 
     static func createURL(baseURL: URL, relativePath: String) -> URL? {
         if relativePath.isEmpty {
-            return baseURL.absoluteURL  // If the relative path is empty, return the base URL
+            return baseURL.absoluteURL // If the relative path is empty, return the base URL
         }
         return baseURL.appendingPathComponent(relativePath).absoluteURL
     }
 }
-
 
 func setupSQLiteConnection(dbName: String) -> Connection? {
     let logger = Logger(subsystem: subsystem, category: "setupSQLiteConnection")
@@ -99,8 +99,8 @@ func setupSQLiteConnection(dbName: String) -> Connection? {
 }
 
 func hashStringToInt64(_ str: String) -> Int64 {
-    let fnvOffsetBasis: UInt64 = 0xcbf2_9ce4_8422_2325
-    let fnvPrime: UInt64 = 0x100_0000_01b3
+    let fnvOffsetBasis: UInt64 = 0xCBF2_9CE4_8422_2325
+    let fnvPrime: UInt64 = 0x100_0000_01B3
     var hash = fnvOffsetBasis
 
     for byte in str.utf8 {
@@ -114,7 +114,7 @@ func hashStringToInt64(_ str: String) -> Int64 {
 func generateSongKey(artist: String, title: String, album: String) -> Int64 {
     // Normalize or lowercased if you like
     let combined = "\(artist.lowercased())__\(title.lowercased())__\(album.lowercased())"
-    return hashStringToInt64(combined)  // Using your existing FNV approach
+    return hashStringToInt64(combined) // Using your existing FNV approach
 }
 
 func makeURLHash(_ folderURL: URL) -> Int64 {
@@ -124,7 +124,6 @@ func makeURLHash(_ folderURL: URL) -> Int64 {
 func makeBookmarkKey(_ folderURL: URL) -> String {
     return String(makeURLHash(folderURL))
 }
-
 
 // Could be anything
 // file://
@@ -164,7 +163,7 @@ extension URL {
     /// Returns a normalized URL with no trailing slash in its path (unless it's just "/" for root).
     var normalizedWithoutTrailingSlash: URL {
         // Standardize the URL first
-        let standardizedURL = self.standardized
+        let standardizedURL = standardized
         // Use URLComponents to safely modify the path
         guard var components = URLComponents(url: standardizedURL, resolvingAgainstBaseURL: false)
         else {
@@ -183,11 +182,9 @@ extension URL {
     }
 }
 
-
 enum NotImplementedError: Error {
     case featureNotImplemented(message: String)
 }
-
 
 func preprocessFTSQuery(_ input: String) -> String {
     input

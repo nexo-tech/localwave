@@ -1,5 +1,6 @@
-import os
 import AVFoundation
+import os
+
 class DefaultSourceService: SourceService {
     func importService() -> any SourceImportService {
         return sourceImportService
@@ -31,16 +32,19 @@ class DefaultSourceService: SourceService {
             let src = Source(
                 id: nil, dirPath: path, pathId: pathId, userId: userId, type: type, totalPaths: nil,
                 syncError: nil,
-                isCurrent: true, createdAt: Date(), lastSyncedAt: nil, updatedAt: nil)
+                isCurrent: true, createdAt: Date(), lastSyncedAt: nil, updatedAt: nil
+            )
             let source = try await sourceRepo.create(source: src)
             logger.debug("updating current switch")
             let lib2 = try await sourceRepo.setCurrentSource(
-                userId: userId, sourceId: source.id!)
+                userId: userId, sourceId: source.id!
+            )
             return lib2
         } else if !source[0].isCurrent {
             logger.debug("source is found, but it's not current")
             let lib2 = try await sourceRepo.setCurrentSource(
-                userId: userId, sourceId: source[0].id!)
+                userId: userId, sourceId: source[0].id!
+            )
             return lib2
         } else {
             return source[0]
@@ -63,5 +67,4 @@ class DefaultSourceService: SourceService {
         self.sourceSyncService = sourceSyncService
         self.sourceImportService = sourceImportService
     }
-
 }

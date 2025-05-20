@@ -27,7 +27,8 @@ actor DefaultSourceImportService: SourceImportService {
     func listItems(sourceId: Int64, parentPathId: Int64?) async throws -> [SourcePath] {
         logger.debug("attempting to list for libID : \(sourceId), parent: \(parentPathId ?? -1)")
         let all = try await sourcePathRepository.getByParentId(
-            sourceId: sourceId, parentPathId: parentPathId)
+            sourceId: sourceId, parentPathId: parentPathId
+        )
 
         logger.debug("got : \(all.count) items")
 
@@ -38,15 +39,15 @@ actor DefaultSourceImportService: SourceImportService {
         let results = try await sourcePathSearchRepository.search(
             sourceId: sourceId,
             query: query,
-            limit: 100  // or whatever you like
+            limit: 100 // or whatever you like
         )
 
         // Retrieve the actual SourcePath records for each matching pathId
         var paths = [SourcePath]()
         for r in results {
             if let p = try await sourcePathRepository.getByPathId(
-                sourceId: sourceId, pathId: r.pathId)
-            {
+                sourceId: sourceId, pathId: r.pathId
+            ) {
                 paths.append(p)
             }
         }

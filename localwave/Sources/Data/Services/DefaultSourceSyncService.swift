@@ -29,7 +29,8 @@ actor DefaultSourceSyncService: SourceSyncService {
             onSetLoading?(true)
             defer { onSetLoading?(false) }
             let result = try await syncDirInner(
-                folderURL: folderURL, onCurrentURL: onCurrentURL, onSetLoading: onSetLoading)
+                folderURL: folderURL, onCurrentURL: onCurrentURL, onSetLoading: onSetLoading
+            )
             let runId = Int64(Date().timeIntervalSince1970 * 1000)
 
             let itemsToCreate = result?.allItems.map { x in
@@ -65,9 +66,11 @@ actor DefaultSourceSyncService: SourceSyncService {
 
             logger.debug("removing stale paths...")
             let deletedCount = try await sourcePathRepository.deleteMany(
-                sourceId: sourceId, excludingRunId: runId)
+                sourceId: sourceId, excludingRunId: runId
+            )
             try await sourcePathSearchRepository.batchDeleteFTS(
-                sourceId: sourceId, excludingRunId: runId)
+                sourceId: sourceId, excludingRunId: runId
+            )
             logger.debug("removed \(deletedCount) stale paths")
 
             if let result = result {
@@ -86,7 +89,7 @@ actor DefaultSourceSyncService: SourceSyncService {
             if var lib = try await sourceRepository.getOne(id: sourceId) {
                 lib.lastSyncedAt = Date()
                 lib.updatedAt = Date()
-                lib.totalPaths = result?.totalAudioFiles ?? 0  // Ensure totalPaths is set
+                lib.totalPaths = result?.totalAudioFiles ?? 0 // Ensure totalPaths is set
                 return try await sourceRepository.updateSource(source: lib)
             }
             return nil
@@ -105,7 +108,7 @@ actor DefaultSourceSyncService: SourceSyncService {
     func syncDirInner(
         folderURL: URL,
         onCurrentURL: ((_ url: URL) -> Void)?,
-        onSetLoading: ((_ loading: Bool) -> Void)?
+        onSetLoading _: ((_ loading: Bool) -> Void)?
     ) async throws
         -> SourceSyncResult?
     {
@@ -123,7 +126,8 @@ actor DefaultSourceSyncService: SourceSyncService {
                 resolvingBookmarkData: bookmarkData,
                 options: [],
                 relativeTo: nil,
-                bookmarkDataIsStale: &isStale)
+                bookmarkDataIsStale: &isStale
+            )
 
             if isStale {
                 // The bookmark is stale, so we need a new one
@@ -140,22 +144,24 @@ actor DefaultSourceSyncService: SourceSyncService {
             // Now we can scan the folder
             if let enumerator = FileManager.default.enumerator(
                 at: folderURL, includingPropertiesForKeys: [.isDirectoryKey],
-                options: [.skipsHiddenFiles, .skipsPackageDescendants])
-            {
+                options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            ) {
                 for case let file as URL in enumerator {
                     do {
                         onCurrentURL?(file)
                         let resourceValues = try file.resourceValues(forKeys: [.isDirectoryKey])
-                        if resourceValues.isDirectory == false,  // file.pathExtension.lowercased() == "mp3"
-                            audioExtensions.contains(file.pathExtension.lowercased())
+                        if resourceValues.isDirectory == false, // file.pathExtension.lowercased() == "mp3"
+                           audioExtensions.contains(file.pathExtension.lowercased())
                         {
                             let resultItem = SourceSyncResultItem(
-                                rootURL: folderURL, current: file, isDirectory: false)
+                                rootURL: folderURL, current: file, isDirectory: false
+                            )
                             audioURLs.append(resultItem)
                             result[FileHelper(fileURL: file).toString()] = resultItem
                         } else {
                             let resultItem = SourceSyncResultItem(
-                                rootURL: folderURL, current: file, isDirectory: true)
+                                rootURL: folderURL, current: file, isDirectory: true
+                            )
                             result[FileHelper(fileURL: file).toString()] = resultItem
                         }
                     } catch {
@@ -165,7 +171,8 @@ actor DefaultSourceSyncService: SourceSyncService {
                 logger.debug("Total audio files found: \(audioURLs.count)")
                 return SourceSyncResult(
                     allItems: Array(result.values), audioFiles: audioURLs,
-                    totalAudioFiles: audioURLs.count)
+                    totalAudioFiles: audioURLs.count
+                )
             } else {
                 throw CustomError.genericError("failed to get enumerator")
             }

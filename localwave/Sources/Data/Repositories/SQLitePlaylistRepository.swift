@@ -1,6 +1,7 @@
 import Foundation
-import SQLite
 import os
+import SQLite
+
 actor SQLitePlaylistRepository: PlaylistRepository {
     private let db: Connection
     private let table = Table("playlists")
@@ -41,7 +42,8 @@ actor SQLitePlaylistRepository: PlaylistRepository {
         let rowId = try db.run(insert)
         return Playlist(
             id: rowId, name: playlist.name, createdAt: playlist.createdAt,
-            updatedAt: playlist.updatedAt)
+            updatedAt: playlist.updatedAt
+        )
     }
 
     func update(playlist: Playlist) async throws -> Playlist {

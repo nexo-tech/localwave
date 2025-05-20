@@ -1,4 +1,5 @@
 import Foundation
+
 // models
 struct User: Sendable {
     let id: Int64?
@@ -20,7 +21,7 @@ struct PlaylistSong: Identifiable, Sendable {
     let id: Int64?
     let playlistId: Int64
     let songId: Int64
-    let position: Int  // New: For ordering
+    let position: Int // New: For ordering
 }
 
 struct Source: Sendable, Identifiable {
@@ -84,7 +85,7 @@ struct Album: Identifiable, Hashable {
         let cleanedName = name.isEmpty ? "Unknown Album" : name
         let cleanedArtist = artist?.isEmpty ?? true ? nil : artist
 
-        self.id = "\(cleanedArtist ?? "Unknown Artist")-\(cleanedName)"
+        id = "\(cleanedArtist ?? "Unknown Artist")-\(cleanedName)"
         self.name = cleanedName
         self.artist = cleanedArtist
         self.coverArtPath = coverArtPath
@@ -124,7 +125,7 @@ struct Song: Sendable, Identifiable, Equatable {
     let createdAt: Date
     let updatedAt: Date?
 
-    let localFilePath: String?  // Path in app's Documents directory
+    let localFilePath: String? // Path in app's Documents directory
     var fileState: FileState
 
     func copyWith(_ fp: String, _ st: FileState) -> Song {
@@ -147,6 +148,7 @@ struct Song: Sendable, Identifiable, Equatable {
             fileState: st
         )
     }
+
     func copyWith(id: Int64?) -> Song {
         Song(
             id: id,

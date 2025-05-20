@@ -1,6 +1,6 @@
 import Foundation
-import SQLite
 import os
+import SQLite
 
 actor SQLiteSourcePathRepository: SourcePathRepository {
     private let db: Connection
@@ -71,7 +71,9 @@ actor SQLiteSourcePathRepository: SourcePathRepository {
             )
         }
     }
+
     // MARK: - Initializer
+
     init(db: Connection) throws {
         let colId = SQLite.Expression<Int64>("id")
         let colSourceId = SQLite.Expression<Int64>("sourceId")
@@ -116,6 +118,7 @@ actor SQLiteSourcePathRepository: SourcePathRepository {
         self.colCreatedAt = colCreatedAt
         self.colUpdatedAt = colUpdatedAt
     }
+
     func deleteMany(sourceId: Int64, excludingRunId: Int64) async throws -> Int {
         let query = table.filter(colSourceId == sourceId && colRunId != excludingRunId)
         let count = try db.run(query.delete())
@@ -124,7 +127,9 @@ actor SQLiteSourcePathRepository: SourcePathRepository {
         )
         return count
     }
+
     // MARK: - Create
+
     func create(path: SourcePath) async throws -> SourcePath {
         let insert = table.insert(
             colSourceId <- path.sourceId,
@@ -144,6 +149,7 @@ actor SQLiteSourcePathRepository: SourcePathRepository {
     }
 
     // MARK: - Update File Hash
+
     func updateFileHash(pathId: Int64, fileHash: Data?) async throws {
         let query = table.filter(colPathId == pathId)
         try db.run(query.update(colFileHashSHA256 <- fileHash))
@@ -151,6 +157,7 @@ actor SQLiteSourcePathRepository: SourcePathRepository {
     }
 
     // MARK: - Delete Many
+
     func deleteMany(sourceId: Int64) async throws {
         let query = table.filter(colSourceId == sourceId)
         let count = try db.run(query.delete())
@@ -158,6 +165,7 @@ actor SQLiteSourcePathRepository: SourcePathRepository {
     }
 
     // MARK: - Get By Parent ID
+
     func getByParentId(parentId: Int64) async throws -> [SourcePath] {
         try db.prepare(table.filter(colParentPathId == parentId)).map { row in
             SourcePath(
@@ -177,6 +185,7 @@ actor SQLiteSourcePathRepository: SourcePathRepository {
     }
 
     // MARK: - Get By Path
+
     func getByPath(relativePath: String, sourceId: Int64) async throws -> SourcePath? {
         let query = table.filter(colRelativePath == relativePath && colSourceId == sourceId)
         if let row = try db.pluck(query) {
@@ -204,7 +213,7 @@ actor SQLiteSourcePathRepository: SourcePathRepository {
         try db.transaction {
             for path in paths {
                 let query = table.filter(colSourceId == path.sourceId && colPathId == path.pathId)
-                if (try db.pluck(query)) != nil {
+                if try (db.pluck(query)) != nil {
                     // Update existing record
                     try db.run(
                         query.update(

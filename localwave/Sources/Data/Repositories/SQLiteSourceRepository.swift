@@ -1,6 +1,6 @@
 import Foundation
-import SQLite
 import os
+import SQLite
 
 actor SQLiteSourceRepository: SourceRepository {
     private let db: Connection
@@ -80,7 +80,7 @@ actor SQLiteSourceRepository: SourceRepository {
                 dirPath: row[colDirPath],
                 pathId: row[colPathId],
                 userId: row[colUserId],
-                type: row[colType].flatMap(SourceType.init(rawValue:)),  // Map from String?
+                type: row[colType].flatMap(SourceType.init(rawValue:)), // Map from String?
                 totalPaths: row[colTotalPaths],
                 syncError: row[colSyncError],
                 isCurrent: row[colIsCurrent],
@@ -98,7 +98,7 @@ actor SQLiteSourceRepository: SourceRepository {
             colDirPath <- source.dirPath,
             colPathId <- source.pathId,
             colUserId <- source.userId,
-            colType <- source.type?.rawValue,  // Explicit null if type is nil
+            colType <- source.type?.rawValue, // Explicit null if type is nil
             colTotalPaths <- source.totalPaths,
             colSyncError <- source.syncError,
             colIsCurrent <- source.isCurrent,
@@ -115,7 +115,7 @@ actor SQLiteSourceRepository: SourceRepository {
             dirPath: source.dirPath,
             pathId: source.pathId,
             userId: source.userId,
-            type: source.type,  // Preserve original type
+            type: source.type, // Preserve original type
             totalPaths: source.totalPaths,
             syncError: source.syncError,
             isCurrent: source.isCurrent,

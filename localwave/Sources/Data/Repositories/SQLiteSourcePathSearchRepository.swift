@@ -1,19 +1,19 @@
 import Foundation
-import SQLite
 import os
+import SQLite
 
 actor SQLiteSourcePathSearchRepository: SourcePathSearchRepository {
     func search(sourceId: Int64, query: String, limit: Int) async throws -> [PathSearchResult] {
         let processedQuery = preprocessFTSQuery(query)
 
         let sql = """
-            SELECT pathId, bm25(source_paths_fts) AS rank
-            FROM source_paths_fts
-            WHERE source_paths_fts MATCH ?
-                AND sourceId = ?
-            ORDER BY rank
-            LIMIT ?;
-            """
+        SELECT pathId, bm25(source_paths_fts) AS rank
+        FROM source_paths_fts
+        WHERE source_paths_fts MATCH ?
+            AND sourceId = ?
+        ORDER BY rank
+        LIMIT ?;
+        """
 
         var results: [PathSearchResult] = []
         for row in try db.prepare(sql, processedQuery, sourceId, limit) {
@@ -33,6 +33,7 @@ actor SQLiteSourcePathSearchRepository: SourcePathSearchRepository {
     private let logger = Logger(subsystem: subsystem, category: "SourcePathSearchRepository")
 
     // MARK: - Batch Delete by sourceId, excluding runId
+
     func batchDeleteFTS(sourceId: Int64, excludingRunId: Int64) async throws {
         // Delete all rows with this sourceId where runId != excludingRunId
         let query = ftsTable.filter(
@@ -44,6 +45,7 @@ actor SQLiteSourcePathSearchRepository: SourcePathSearchRepository {
     }
 
     // MARK: - Batch Upsert
+
     /// If `(sourceId, pathId)` already exists, we update `runId`, `fullPath`, `fileName`.
     /// Otherwise, we insert a new row.
     func batchUpsertIntoFTS(paths: [SourcePath]) async throws {
@@ -78,6 +80,7 @@ actor SQLiteSourcePathSearchRepository: SourcePathSearchRepository {
             }
         }
     }
+
     private let db: Connection
     private let ftsTable = Table("source_paths_fts")
     private let colFtsPathId = SQLite.Expression<Int64>("pathId")
@@ -101,5 +104,4 @@ actor SQLiteSourcePathSearchRepository: SourcePathSearchRepository {
             );
             """)
     }
-
 }
