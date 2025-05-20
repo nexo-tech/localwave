@@ -59,9 +59,9 @@
 			path = localwave;
 			sourceTree = "<group>";
 		};
-		10811E822D31CF02008CAD75 /* musicappTests */ = {
+		10811E822D31CF02008CAD75 /* localwaveTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = musicappTests;
+			path = localwaveTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -106,7 +106,7 @@
 				10512A332D55715D004793A5 /* fonts */,
 				1035973D2D3457B100456EB8 /* localwave.xctestplan */,
 				10811E712D31CF01008CAD75 /* localwave */,
-				10811E822D31CF02008CAD75 /* musicappTests */,
+				10811E822D31CF02008CAD75 /* localwaveTests */,
 				103CBBE72D331D7D00F3CEDF /* Frameworks */,
 				10811E702D31CF01008CAD75 /* Products */,
 			);
@@ -164,7 +164,7 @@
 				10811E812D31CF02008CAD75 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				10811E822D31CF02008CAD75 /* musicappTests */,
+				10811E822D31CF02008CAD75 /* localwaveTests */,
 			);
 			name = musicappTests;
 			packageProductDependencies = (
