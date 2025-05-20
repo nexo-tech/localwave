@@ -1,83 +1,114 @@
 # LocalWave
 
-LocalWave is a modern music application built for iOS and macOS using SwiftUI. It provides a seamless and intuitive interface for managing and enjoying your local music collection.
+LocalWave is a modern, feature-rich music player for iOS that focuses on local music library management and playback. Built with SwiftUI and following MVVM architecture, it provides a seamless and intuitive experience for managing and enjoying your music collection.
 
 ## Features
 
-- Beautiful and modern SwiftUI interface
-- Cross-platform support (iOS and macOS)
-- Local music library management
-- Customizable music playback experience
-- Native Apple platform integration
+### 🎵 Music Library Management
+- **Artists View**: Browse your music collection by artists with cover art and album counts
+- **Albums View**: Grid view of albums with beautiful artwork display
+- **Songs View**: Complete list of all songs with search and quick playback
+- **Playlists**: Create and manage custom playlists with drag-and-drop reordering
+
+### 🎧 Advanced Playback
+- **Full Player**: Beautiful full-screen player with artwork display and playback controls
+- **Mini Player**: Compact player that stays accessible while browsing
+- **Queue Management**: View and modify the current playback queue
+- **Playback Modes**: Support for shuffle and repeat modes
+- **Background Playback**: Continue playing music while using other apps
+- **Lock Screen Controls**: Control playback from the lock screen
+
+### 🔄 Library Sync
+- **Multiple Sources**: Add multiple music directories as sources
+- **File Browser**: Intuitive file browser for selecting music directories
+- **Auto-Sync**: Automatic synchronization of music library changes
+- **Background Sync**: Sync continues even when the app is in the background
+
+### 🎨 Modern UI/UX
+- **Dark Mode**: Beautiful dark theme optimized for music playback
+- **Custom Navigation**: Smooth and intuitive navigation between views
+- **Search**: Powerful search functionality across all views
+- **Responsive Design**: Optimized for all iOS devices
 
 ## Requirements
 
-- iOS 15.0+ / macOS 12.0+
-- Xcode 14.0+
-- Swift 5.7+
+- iOS 15.0+
+- Xcode 13.0+
+- Swift 5.5+
 
 ## Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/music-app.git
+git clone https://github.com/nexo-tech/localwave.git
 ```
 
 2. Open the project in Xcode:
 ```bash
-cd music-app
+cd localwave
 open localwave.xcodeproj
 ```
 
-3. Build and run the project using Xcode
+3. Build and run the project (⌘R)
 
-## Project Structure
+## Architecture
+
+LocalWave follows the MVVM (Model-View-ViewModel) architecture pattern:
+
+- **Models**: Core data structures and business logic
+- **Views**: SwiftUI views for the user interface
+- **ViewModels**: State management and business logic for views
+- **Repositories**: Data access layer for models
+- **Services**: Core services like audio playback and file management
+
+### Directory Structure
 
 ```
 localwave/
-├── App.swift          # Main application entry point
-├── View.swift         # Main view components
-├── Preview.swift      # SwiftUI previews
-├── Assets.xcassets    # App resources and assets
-└── Info.plist         # App configuration
-```
-
-## Development
-
-The project is built using SwiftUI and follows modern iOS/macOS development practices. The main components are:
-
-- `App.swift`: Contains the main application logic and setup
-- `View.swift`: Houses the SwiftUI views and UI components
-- `Preview.swift`: Provides preview support for SwiftUI development
-
-## Testing
-
-The project includes a test suite located in the `localwaveTests` directory. Run tests using:
-
-```bash
-xcodebuild test -scheme localwave -destination 'platform=iOS Simulator,name=iPhone 14'
+├── Sources/
+│   ├── Features/
+│   │   ├── Common/
+│   │   │   ├── SearchBar.swift
+│   │   │   ├── CustomTabView.swift
+│   │   │   └── Theme.swift
+│   │   ├── Library/
+│   │   │   ├── LibraryView.swift
+│   │   │   ├── ArtistListView.swift
+│   │   │   ├── AlbumGridView.swift
+│   │   │   └── ...
+│   │   ├── Player/
+│   │   │   ├── PlayerViewModel.swift
+│   │   │   ├── PlayerView.swift
+│   │   │   └── MiniPlayerView.swift
+│   │   └── Sync/
+│   │       ├── SourceManagementView.swift
+│   │       └── FileBrowserView.swift
+│   ├── Models/
+│   ├── Repositories/
+│   └── Services/
+└── Tests/
 ```
 
 ## Contributing
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add some amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Acknowledgments
 
-- Apple SwiftUI framework
-- Apple MusicKit
-- All contributors who have helped shape this project
+- [SwiftUI](https://developer.apple.com/xcode/swiftui/) - The UI framework
+- [AVFoundation](https://developer.apple.com/av-foundation/) - Audio playback
+- [Combine](https://developer.apple.com/documentation/combine) - Reactive programming
 
 ## Contact
 
-Your Name - [@yourtwitter](https://twitter.com/yourtwitter)
+Your Name - [@nexo_v1](https://twitter.com/nexo_v1)
 
-Project Link: [https://github.com/yourusername/music-app](https://github.com/yourusername/music-app)
+Project Link: [https://github.com/nexo-tech/localwave](https://github.com/nexo-tech/localwave)
