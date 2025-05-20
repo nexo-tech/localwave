@@ -7,7 +7,7 @@
 
 import Testing
 
-@testable import musicapp
+@testable import localwave
 import Foundation
 
 

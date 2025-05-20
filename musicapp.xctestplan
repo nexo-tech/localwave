@@ -10,16 +10,16 @@
   ],
   "defaultOptions" : {
     "targetForVariableExpansion" : {
-      "containerPath" : "container:musicapp.xcodeproj",
+      "containerPath" : "container:localwave.xcodeproj",
       "identifier" : "10811E6E2D31CF01008CAD75",
-      "name" : "musicapp"
+      "name" : "localwave"
     }
   },
   "testTargets" : [
     {
       "parallelizable" : false,
       "target" : {
-        "containerPath" : "container:musicapp.xcodeproj",
+        "containerPath" : "container:localwave.xcodeproj",
         "identifier" : "10811E7E2D31CF02008CAD75",
         "name" : "musicappTests"
       }
@@ -27,7 +27,7 @@
     {
       "parallelizable" : true,
       "target" : {
-        "containerPath" : "container:musicapp.xcodeproj",
+        "containerPath" : "container:localwave.xcodeproj",
         "identifier" : "10811E882D31CF02008CAD75",
         "name" : "musicappUITests"
       }

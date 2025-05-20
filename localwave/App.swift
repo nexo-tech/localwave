@@ -5,7 +5,7 @@ import UIKit
 import os
 
 /// subsystem used in logs
-let subsystem = "com.snowbear.musicapp"
+let subsystem = "com.snowbear.localwave"
 let schemaVersion = 29
 
 enum CustomError: Error {

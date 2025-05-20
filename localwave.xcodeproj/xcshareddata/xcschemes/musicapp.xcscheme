@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "10811E6E2D31CF01008CAD75"
-               BuildableName = "musicapp.app"
-               BlueprintName = "musicapp"
-               ReferencedContainer = "container:musicapp.xcodeproj">
+               BuildableName = "localwave.app"
+               BlueprintName = "localwave"
+               ReferencedContainer = "container:localwave.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -30,7 +30,7 @@
       shouldUseLaunchSchemeArgsEnv = "YES">
       <TestPlans>
          <TestPlanReference
-            reference = "container:musicapp.xctestplan"
+            reference = "container:localwave.xctestplan"
             default = "YES">
          </TestPlanReference>
       </TestPlans>
@@ -43,7 +43,7 @@
                BlueprintIdentifier = "10811E7E2D31CF02008CAD75"
                BuildableName = "musicappTests.xctest"
                BlueprintName = "musicappTests"
-               ReferencedContainer = "container:musicapp.xcodeproj">
+               ReferencedContainer = "container:localwave.xcodeproj">
             </BuildableReference>
          </TestableReference>
          <TestableReference
@@ -54,7 +54,7 @@
                BlueprintIdentifier = "10811E882D31CF02008CAD75"
                BuildableName = "musicappUITests.xctest"
                BlueprintName = "musicappUITests"
-               ReferencedContainer = "container:musicapp.xcodeproj">
+               ReferencedContainer = "container:localwave.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
@@ -74,9 +74,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "10811E6E2D31CF01008CAD75"
-            BuildableName = "musicapp.app"
-            BlueprintName = "musicapp"
-            ReferencedContainer = "container:musicapp.xcodeproj">
+            BuildableName = "localwave.app"
+            BlueprintName = "localwave"
+            ReferencedContainer = "container:localwave.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -91,9 +91,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "10811E6E2D31CF01008CAD75"
-            BuildableName = "musicapp.app"
-            BlueprintName = "musicapp"
-            ReferencedContainer = "container:musicapp.xcodeproj">
+            BuildableName = "localwave.app"
+            BlueprintName = "localwave"
+            ReferencedContainer = "container:localwave.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

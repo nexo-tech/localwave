@@ -335,7 +335,7 @@ class SongListViewModel: ObservableObject {
     private var currentQuery: String = ""
 
     private let logger = Logger(
-        subsystem: "com.snowbear.musicapp",
+        subsystem: "com.snowbear.localwave",
         category: "SongListViewModel")
 
     init(songRepo: SongRepository, filter: Filter) {
