@@ -1,34 +1,49 @@
 # LocalWave
 
-LocalWave is a modern, feature-rich music player for iOS that focuses on local music library management and playback. Built with SwiftUI and following MVVM architecture, it provides a seamless and intuitive experience for managing and enjoying your music collection.
+LocalWave is an **offline-first** music player for iOS that enables full control of your personal MP3 library without relying on Apple Music or iTunes Match. Built with SwiftUI and structured using a layered MVVM + Actor-based architecture, LocalWave prioritizes offline use and searchability. It was designed out of frustration with Apple's closed ecosystem and lack of decent support for self-hosted MP3 libraries.
+
+## Why LocalWave Exists
+
+In 2025, Apple still restricts basic MP3 playback unless you pay for services like Apple Music or iTunes Match. LocalWave was built from scratch as a personal response to these limitations. It allows users to:
+
+- Import MP3 files from iCloud or Files app using persistent bookmarks
+- Build and search their own curated music libraries
+- Avoid subscriptions or cloud lock-in
+- Leverage native performance and Swift concurrency for a smooth user experience
 
 ## Features
 
 ### 🎵 Music Library Management
-- **Artists View**: Browse your music collection by artists with cover art and album counts
-- **Albums View**: Grid view of albums with beautiful artwork display
-- **Songs View**: Complete list of all songs with search and quick playback
-- **Playlists**: Create and manage custom playlists with drag-and-drop reordering
+
+- **Artists / Albums / Songs Views**: Browse, sort, and search with artwork and metadata
+- **Full-Text Search (FTS5)**: Search across title, artist, album, and path with SQLite-powered fuzzy matching
+- **Playlists**: Create custom playlists with drag-and-drop reordering
+- **Library Sync**: Import music folders recursively from iCloud using background sync services
 
 ### 🎧 Advanced Playback
-- **Full Player**: Beautiful full-screen player with artwork display and playback controls
-- **Mini Player**: Compact player that stays accessible while browsing
-- **Queue Management**: View and modify the current playback queue
-- **Playback Modes**: Support for shuffle and repeat modes
-- **Background Playback**: Continue playing music while using other apps
-- **Lock Screen Controls**: Control playback from the lock screen
 
-### 🔄 Library Sync
-- **Multiple Sources**: Add multiple music directories as sources
-- **File Browser**: Intuitive file browser for selecting music directories
-- **Auto-Sync**: Automatic synchronization of music library changes
-- **Background Sync**: Sync continues even when the app is in the background
+- **AVFoundation-Based Audio Playback**: Full support for MP3s with lock screen controls
+- **Mini and Full Player UI**: Seamless transitions and persistent playback
+- **Queue Management**: Shuffle, repeat, and reorder tracks
+- **Background Playback**: Continues playing while the app is backgrounded
 
-### 🎨 Modern UI/UX
-- **Dark Mode**: Beautiful dark theme optimized for music playback
-- **Custom Navigation**: Smooth and intuitive navigation between views
-- **Search**: Powerful search functionality across all views
-- **Responsive Design**: Optimized for all iOS devices
+### 📁 Filesystem and iCloud Sync
+
+- **Persistent File Access via Security-Scoped Bookmarks**: Stores references safely in SQLite
+- **Fallback File Copying**: Copies MP3s into app container while bookmarks are still valid
+- **Multi-source Import**: Add and merge multiple folder trees into a unified library
+
+### 🔍 Full-Text Search Engine
+
+- **Powered by SQLite FTS5**: Fast and lightweight search without any cloud dependencies
+- **BM25 Ranking**: Smart search results prioritization
+- **Async Upserts and Transaction Handling**: Keeps search indexes reliable and performant
+
+### 🧠 Architecture Highlights
+
+- **Swift Actors**: State-safe, concurrency-friendly domain logic
+- **MVVM Layering**: Clear separation between View, ViewModel, Repository, and Domain layers
+- **SQLite with FTS5**: Used instead of CoreData for tighter schema and query control
 
 ## Requirements
 
@@ -39,11 +54,13 @@ LocalWave is a modern, feature-rich music player for iOS that focuses on local m
 ## Installation
 
 1. Clone the repository:
+
 ```bash
 git clone https://github.com/nexo-tech/localwave.git
 ```
 
 2. Open the project in Xcode:
+
 ```bash
 cd localwave
 open localwave.xcodeproj
@@ -53,13 +70,14 @@ open localwave.xcodeproj
 
 ## Architecture
 
-LocalWave follows the MVVM (Model-View-ViewModel) architecture pattern:
+LocalWave follows a clean-layered MVVM architecture with a backend-style separation of logic:
 
-- **Models**: Core data structures and business logic
-- **Views**: SwiftUI views for the user interface
-- **ViewModels**: State management and business logic for views
-- **Repositories**: Data access layer for models
-- **Services**: Core services like audio playback and file management
+- **Models**: Core types for songs, albums, metadata, and state
+- **Repositories**: Async interfaces over SQLite using raw SQL and SQLite.swift
+- **Actors**: Swift actors encapsulate business rules (search, import, playback queue)
+- **ViewModels**: Subscribe to actors and provide bindable UI state
+- **Views**: SwiftUI-based UI rendering from ViewModel output
+- **Services**: Playback, file access, metadata parsing, remote control handling
 
 ### Directory Structure
 
@@ -68,26 +86,21 @@ localwave/
 ├── Sources/
 │   ├── Features/
 │   │   ├── Common/
-│   │   │   ├── SearchBar.swift
-│   │   │   ├── CustomTabView.swift
-│   │   │   └── Theme.swift
 │   │   ├── Library/
-│   │   │   ├── LibraryView.swift
-│   │   │   ├── ArtistListView.swift
-│   │   │   ├── AlbumGridView.swift
-│   │   │   └── ...
 │   │   ├── Player/
-│   │   │   ├── PlayerViewModel.swift
-│   │   │   ├── PlayerView.swift
-│   │   │   └── MiniPlayerView.swift
 │   │   └── Sync/
-│   │       ├── SourceManagementView.swift
-│   │       └── FileBrowserView.swift
 │   ├── Models/
 │   ├── Repositories/
 │   └── Services/
 └── Tests/
 ```
+
+### Data Model and FTS Tables
+
+| Domain            | Actor / Repo                       | FTS Table          | Indexed Columns                           |
+| ----------------- | ---------------------------------- | ------------------ | ----------------------------------------- |
+| Library Songs     | `SQLiteSongRepository`             | `songs_fts`        | `artist`, `title`, `album`, `albumArtist` |
+| File Import Paths | `SQLiteSourcePathSearchRepository` | `source_paths_fts` | `fullPath`, `fileName`                    |
 
 ## Contributing
 
@@ -103,12 +116,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Acknowledgments
 
-- [SwiftUI](https://developer.apple.com/xcode/swiftui/) - The UI framework
-- [AVFoundation](https://developer.apple.com/av-foundation/) - Audio playback
-- [Combine](https://developer.apple.com/documentation/combine) - Reactive programming
+- Apple Developer Documentation (AVFoundation, SwiftUI, Combine)
+- `SQLite` and [`SQLite.swift`](https://github.com/stephencelis/SQLite.swift)
+- `AVAudioPlayer` and `MPRemoteCommandCenter`
+- GitHub contributors for open-source ID3 parsing examples
 
 ## Contact
 
-Your Name - [@nexo_v1](https://twitter.com/nexo_v1)
+Oleg Pustovit - [@nexo_v1](https://twitter.com/nexo_v1)
 
 Project Link: [https://github.com/nexo-tech/localwave](https://github.com/nexo-tech/localwave)
