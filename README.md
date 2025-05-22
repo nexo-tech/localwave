@@ -2,7 +2,7 @@
 
 ![Screenshots](https://nexo.sh/posts/why-i-built-a-native-mp3-player-in-swiftui/frame_source.webp)
 
-LocalWave is an **offline-first** music player for iOS that enables full control of your personal MP3 library without relying on Apple Music or iTunes Match. Built with SwiftUI and structured using a layered MVVM + Actor-based architecture, LocalWave prioritizes offline use and searchability. It was designed out of frustration with Apple's closed ecosystem and lack of decent support for self-hosted MP3 libraries. [Lisk to article](https://nexo.sh/posts/why-i-built-a-native-mp3-player-in-swiftui/)
+LocalWave is an **offline-first** music player for iOS that enables full control of your personal MP3 library without relying on Apple Music or iTunes Match. Built with SwiftUI and structured using a layered MVVM + Actor-based architecture, LocalWave prioritizes offline use and searchability. It was designed out of frustration with Apple's closed ecosystem and lack of decent support for self-hosted MP3 libraries. [Link to the article](https://nexo.sh/posts/why-i-built-a-native-mp3-player-in-swiftui/)
 
 ## Why LocalWave Exists
 
