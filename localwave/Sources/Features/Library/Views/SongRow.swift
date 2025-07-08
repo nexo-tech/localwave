@@ -22,8 +22,20 @@ struct SongRow: View {
     var onEditMetadata: (() -> Void)? = nil
     var onAddToQueue: (() -> Void)? = nil
 
+    var onToggleFavorite: ((Bool) -> Void)? = nil
+    
+    @State var isFavorite: Bool?
+    
     var body: some View {
         HStack {
+            
+            Image(systemName: "star.fill")
+                .foregroundColor(isFavorite! ? .yellow : .white)
+                .onTapGesture {
+                    isFavorite!.toggle()
+                    onToggleFavorite?(isFavorite!)
+                }
+            
             VStack(alignment: .leading) {
                 Text(song.title)
                     .font(.headline)

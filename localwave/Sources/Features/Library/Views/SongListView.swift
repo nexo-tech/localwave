@@ -79,7 +79,13 @@ struct SongListView: View {
                             },
                             onAddToQueue: {
                                 playerVM.addToQueue(song)
-                            }
+                            },
+                            onToggleFavorite: { isFavorite in 
+                                Task {
+                                    try? await viewModel.toggleFavorite(song.id, state: isFavorite)
+                                }
+                            },
+                            isFavorite: (song.isFavorite != 0)
                         )
                         .onAppear {
                             viewModel.loadMoreIfNeeded(currentSong: song)
