@@ -24,16 +24,16 @@ struct SongRow: View {
 
     var onToggleFavorite: ((Bool) -> Void)? = nil
     
-    @State var isFavorite: Bool?
+    @State var isFavorite: Bool = false
     
     var body: some View {
         HStack {
             
             Image(systemName: "star.fill")
-                .foregroundColor(isFavorite! ? .yellow : .white)
+                .foregroundColor(isFavorite ? .yellow : .white)
                 .onTapGesture {
-                    isFavorite!.toggle()
-                    onToggleFavorite?(isFavorite!)
+                    isFavorite.toggle()
+                    onToggleFavorite?(isFavorite)
                 }
             
             VStack(alignment: .leading) {
