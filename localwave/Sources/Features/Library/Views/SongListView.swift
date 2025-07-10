@@ -85,7 +85,8 @@ struct SongListView: View {
                                     try? await viewModel.toggleFavorite(song.id, state: isFavorite)
                                 }
                             },
-                            isFavorite: (song.isFavorite != 0)
+                            isFavorite: (song.isFavorite != 0),
+                            readonly: false
                         )
                         .onAppear {
                             viewModel.loadMoreIfNeeded(currentSong: song)
