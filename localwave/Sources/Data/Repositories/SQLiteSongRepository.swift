@@ -70,7 +70,7 @@ actor SQLiteSongRepository: SongRepository {
         let colFileState = SQLite.Expression<Int>("fileState") // NEW
         
         // NEWER: newer expressions
-        let colIsFavorite = SQLite.Expression<Int64>("isFavorite")
+        let colIsFavorite = SQLite.Expression<Int64>("isFavorite") // NEWER
         
         
         self.colId = colId
@@ -112,7 +112,7 @@ actor SQLiteSongRepository: SongRepository {
                 // NEW: add new columns
                 t.column(colLocalFilePath) // NEW
                 t.column(colFileState) // NEW
-                t.column(colIsFavorite)
+                t.column(colIsFavorite) // NEWER
             }
         )
 
@@ -378,7 +378,7 @@ actor SQLiteSongRepository: SongRepository {
                 // NEW: new fields
                 localFilePath: localFilePath, // NEW
                 fileState: fileState, // NEW
-                isFavorite: isFavorite
+                isFavorite: isFavorite // NEWER
             )
             results.append(song)
         }
@@ -488,7 +488,7 @@ actor SQLiteSongRepository: SongRepository {
                 colFileState <- FileState.copyPending.rawValue)) // NEW
     }
     
-    // NEWER: markSongAsFavorite - for applying Favorites filter // NEWER
+    // NEWER: toggleSongAsFavorite - for applying Favorites filter // NEWER
     func toggleSongAsFavorite(songId: Int64, state: Bool) async throws {
         if (state) {
             try db.run(
