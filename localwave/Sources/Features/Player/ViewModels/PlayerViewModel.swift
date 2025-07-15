@@ -412,7 +412,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     private func startTimer() {
         timer = Timer.scheduledTimer(
-            withTimeInterval: 0.1,
+            withTimeInterval: 1.0,
             repeats: true
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
