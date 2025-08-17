@@ -135,12 +135,7 @@ class SongListViewModel: ObservableObject {
             if case .album = filter {
                 logger.debug("need to load \(newSongs.count) songs and sort them")
                 songs.append(contentsOf: newSongs)
-                songs.sort { s1, s2 in
-                    if let t1 = s1.trackNumber, let t2 = s2.trackNumber {
-                        return t1 < t2
-                    }
-                    return s1.title.localizedStandardCompare(s2.title) == .orderedAscending
-                }
+                sortSongs()
             } else {
                 songs.append(contentsOf: newSongs)
             }
@@ -154,6 +149,15 @@ class SongListViewModel: ObservableObject {
         }
     }
 
+    func sortSongs() {
+        songs.sort { s1, s2 in
+            if let t1 = s1.trackNumber, let t2 = s2.trackNumber {
+                return t1 < t2
+            }
+            return s1.title.localizedStandardCompare(s2.title) == .orderedAscending
+        }
+    }
+    
     func searchSongs(query: String) async {
         currentQuery = query
         reset()
