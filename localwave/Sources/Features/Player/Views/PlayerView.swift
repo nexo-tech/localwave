@@ -15,7 +15,7 @@ struct PlayerView: View {
     @EnvironmentObject private var playerVM: PlayerViewModel
     @State private var showingQueue = false
     @State private var shuffleEnabled: Bool = false
-    @State private var repeatEnabled: Bool = false
+    @State private var repeatEnabled: RepeatMode = .none
     @Environment(\.dismiss) private var dismiss
 
     // State for playlist creation
@@ -23,6 +23,7 @@ struct PlayerView: View {
     @State private var playlistName = ""
     @State private var editMode = EditMode.inactive
 
+        
     var body: some View {
         ZStack {
             LinearGradient(
@@ -133,9 +134,9 @@ struct PlayerView: View {
                         repeatEnabled.toggle()
                         playerVM.setRepeat(repeatEnabled)
                     }) {
-                        Image(systemName: repeatEnabled ? "repeat.circle.fill" : "repeat.circle")
+                        Image(systemName: repeatEnabled.iconName)
                             .font(.system(size: 30))
-                            .foregroundColor(repeatEnabled ? .yellow : .white)
+                            .foregroundColor(repeatEnabled.color)
                     }
                 }
                 .padding()
