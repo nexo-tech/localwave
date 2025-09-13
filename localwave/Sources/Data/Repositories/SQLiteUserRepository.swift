@@ -23,7 +23,7 @@ actor SQLiteUserRepository: UserRepository {
 
     init(db: Connection) throws {
         let colId: SQLite.Expression<Int64> = Expression<Int64>("id")
-        let colIcloudId: SQLite.Expression<Int64> = Expression<UInt64>("icloudId")
+        let colIcloudId: SQLite.Expression<Int64> = Expression<Int64>("icloudId")
         try db.run(
             table.create(ifNotExists: true) { t in
                 t.column(colId, primaryKey: .autoincrement)

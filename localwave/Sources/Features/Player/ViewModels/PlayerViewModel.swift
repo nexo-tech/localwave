@@ -11,6 +11,7 @@ import MediaPlayer
 import os
 import SwiftUI
 
+
 @MainActor
 class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayerDelegate {
     @Published var currentSong: Song?
@@ -21,7 +22,7 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     private var isShuffleEnabled: Bool = false
     private var originalQueue: [Song] = []
-    private var isRepeatEnabled: Bool = false
+    private var repeatMode: RepeatMode = .none
 
     var queue: [Song] {
         return songs
@@ -341,16 +342,20 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
     func nextSong() {
         guard !songs.isEmpty else { return }
-        if currentIndex + 1 < songs.count {
-            currentIndex += 1
-            playSong(songs[currentIndex])
-        } else {
-            if isRepeatEnabled {
-                currentIndex = 0
-                playSong(songs[currentIndex])
-            } else {
+        let isPlayingLastSong = currentIndex == songs.count - 1
+        switch repeatMode {
+        case .none:
+            if (isPlayingLastSong) {
                 stop()
+            } else {
+                currentIndex += 1
+                playSong(songs[currentIndex])
             }
+        case .all:
+            currentIndex = isPlayingLastSong ? 0 : currentIndex + 1
+            playSong(songs[currentIndex])
+        case .one:
+            playSong(songs[currentIndex])
         }
         Task {
             await self.playerPersistenceService?.savePlaybackState(
@@ -399,8 +404,8 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         isShuffleEnabled = enabled
     }
 
-    func setRepeat(_ enabled: Bool) {
-        isRepeatEnabled = enabled
+    func setRepeat(_ enabled: RepeatMode) {
+        repeatMode = enabled
     }
 
     func seekByFraction(_ fraction: Double) {
