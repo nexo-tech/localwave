@@ -70,19 +70,7 @@ struct TUIMainView: View {
                 navigationState: navigationState
             )
         case .artistDetail(let artist):
-            VStack {
-                HStack {
-                    Text("Artist: \(artist)")
-                    Spacer()
-                }
-                Text("")
-                Text("Artist detail view coming soon (Task 3.2)")
-                Text("")
-                Text("Press 'h' or Esc to go back")
-                Spacer()
-            }
-            .onKeyPress("h") { navigationState.wrappedValue.pop() }
-            .onKeyPress("\u{1B}") { navigationState.wrappedValue.pop() }
+            TUIArtistDetailView(dependencies: dependencies, artist: artist, navigationState: navigationState)
         default:
             Text("Route not implemented yet")
         }
