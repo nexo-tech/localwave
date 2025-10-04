@@ -39,7 +39,7 @@
 - [ ] 5.5 Implement add to playlist flow
 
 ### Phase 6: Sync & Source Management
-- [ ] 6.1 Build sync view (source browser)
+- [x] 6.1 Build sync view (source browser)
 - [ ] 6.2 Implement source selection and scanning
 - [ ] 6.3 Add sync progress display
 - [ ] 6.4 Build source management (add/remove sources)

@@ -20,12 +20,13 @@ struct TUIMainView: View {
                 contentView(for: selectedTab, navigationState: navState)
             }
         }
-        // Tab switching with number keys (1-5)
-        .onKeyPress("1") { tabState.selectTab(.artists) }
-        .onKeyPress("2") { tabState.selectTab(.albums) }
-        .onKeyPress("3") { tabState.selectTab(.songs) }
-        .onKeyPress("4") { tabState.selectTab(.playlists) }
-        .onKeyPress("5") { tabState.selectTab(.player) }
+        // Tab switching with number keys (1-6)
+        .onKeyPress("1") { tabState.selectTab(.sync) }
+        .onKeyPress("2") { tabState.selectTab(.artists) }
+        .onKeyPress("3") { tabState.selectTab(.albums) }
+        .onKeyPress("4") { tabState.selectTab(.songs) }
+        .onKeyPress("5") { tabState.selectTab(.playlists) }
+        .onKeyPress("6") { tabState.selectTab(.player) }
         // Vim-style tab navigation
         .onKeyPress("H") { selectPreviousTab() }
         .onKeyPress("L") { selectNextTab() }
@@ -37,7 +38,39 @@ struct TUIMainView: View {
 
     @ViewBuilder
     private func contentView(for tab: Tab, navigationState: Binding<NavigationState>) -> some View {
+        // Check if we have a navigation stack route
+        if let route = navigationState.wrappedValue.currentRoute {
+            routeContent(for: route, navigationState: navigationState)
+        } else {
+            // Show tab content
+            tabContent(for: tab, navigationState: navigationState)
+        }
+    }
+
+    @ViewBuilder
+    private func routeContent(for route: NavigationRoute, navigationState: Binding<NavigationState>) -> some View {
+        switch route {
+        case .sync:
+            TUISyncView(dependencies: dependencies, navigationState: navigationState)
+        case .sourceBrowse(let sourceId, let parentPathId):
+            TUISourceBrowseView(
+                dependencies: dependencies,
+                sourceId: sourceId,
+                parentPathId: parentPathId,
+                navigationState: navigationState
+            )
+        case .sourceScan:
+            Text("Scan view - Coming soon")
+        default:
+            Text("Route not implemented yet")
+        }
+    }
+
+    @ViewBuilder
+    private func tabContent(for tab: Tab, navigationState: Binding<NavigationState>) -> some View {
         switch tab {
+        case .sync:
+            TUISyncView(dependencies: dependencies, navigationState: navigationState)
         case .artists:
             ArtistsPlaceholder()
         case .albums:
@@ -69,14 +102,7 @@ struct TUIMainView: View {
 struct ArtistsPlaceholder: View {
     var body: some View {
         VStack {
-            Text("Artists View - Coming Soon")
-            Text("")
-            Text("Keyboard Shortcuts:")
-            Text("  1-5: Switch tabs")
-            Text("  H/L: Previous/Next tab (vim-style)")
-            Text("  q: Quit")
-            Text("  ?: Help")
-            Text("  /: Search")
+            Text("Artists View - Coming Soon - Press '1' for Sync")
             Spacer()
         }
     }
@@ -86,8 +112,6 @@ struct AlbumsPlaceholder: View {
     var body: some View {
         VStack {
             Text("Albums View - Coming Soon")
-            Text("")
-            Text("Try pressing 1-5 to switch tabs!")
             Spacer()
         }
     }
@@ -97,8 +121,6 @@ struct SongsPlaceholder: View {
     var body: some View {
         VStack {
             Text("Songs View - Coming Soon")
-            Text("")
-            Text("Vim users: Use H/L to navigate tabs")
             Spacer()
         }
     }
@@ -108,8 +130,6 @@ struct PlaylistsPlaceholder: View {
     var body: some View {
         VStack {
             Text("Playlists View - Coming Soon")
-            Text("")
-            Text("Press numbers 1-5 or H/L for navigation")
             Spacer()
         }
     }
@@ -119,8 +139,6 @@ struct PlayerPlaceholder: View {
     var body: some View {
         VStack {
             Text("Player View - Coming Soon")
-            Text("")
-            Text("Keyboard shortcuts are now working!")
             Spacer()
         }
     }

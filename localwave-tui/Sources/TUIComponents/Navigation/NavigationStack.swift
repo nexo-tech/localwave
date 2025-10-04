@@ -19,6 +19,10 @@ public enum NavigationRoute: Hashable, Equatable {
     case playlistDetail(playlistId: Int64)
     case player
     case search(query: String)
+    // Sync routes
+    case sync
+    case sourceBrowse(sourceId: Int64, parentPathId: Int64?)
+    case sourceScan(sourceId: Int64, pathId: Int64, path: String)
 }
 
 /// Navigation state data
@@ -65,6 +69,16 @@ public struct NavigationState {
                 components.append("Player")
             case .search(let query):
                 components.append("Search: \(query)")
+            case .sync:
+                components.append("Sync")
+            case .sourceBrowse(_, let parentPathId):
+                if parentPathId == nil {
+                    components.append("Browse Root")
+                } else {
+                    components.append("Browse")
+                }
+            case .sourceScan(_, _, let path):
+                components.append("Scan: \(path)")
             }
         }
 

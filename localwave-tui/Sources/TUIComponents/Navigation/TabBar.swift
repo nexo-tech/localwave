@@ -9,15 +9,17 @@ import SwiftTUI
 
 /// Available tabs in the TUI application
 public enum Tab: Int, CaseIterable, Hashable {
-    case artists = 1
-    case albums = 2
-    case songs = 3
-    case playlists = 4
-    case player = 5
+    case sync = 1
+    case artists = 2
+    case albums = 3
+    case songs = 4
+    case playlists = 5
+    case player = 6
 
     /// Display name for the tab
     public var title: String {
         switch self {
+        case .sync: return "Sync"
         case .artists: return "Artists"
         case .albums: return "Albums"
         case .songs: return "Songs"
@@ -34,6 +36,7 @@ public enum Tab: Int, CaseIterable, Hashable {
     /// Icon/indicator for the tab
     public var icon: String {
         switch self {
+        case .sync: return "⟳"
         case .artists: return "♪"
         case .albums: return "◉"
         case .songs: return "♫"
@@ -46,7 +49,7 @@ public enum Tab: Int, CaseIterable, Hashable {
 /// Tab bar state
 public struct TabBarState {
     /// Currently selected tab
-    public var selectedTab: Tab = .artists
+    public var selectedTab: Tab = .sync
 
     /// Previous tab (for tracking)
     public var previousTab: Tab?
