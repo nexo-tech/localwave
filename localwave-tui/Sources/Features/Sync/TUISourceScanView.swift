@@ -80,17 +80,11 @@ struct TUISourceScanView: View {
                 cancelScanning()
             }
         }
-        .onKeyPress("\u{1B}") {  // Escape key
-            if isScanning {
-                cancelScanning()
-            } else if isComplete || errorMessage != nil {
-                navigationState.pop()
-            }
+        .onKeyPress("h") {  // Back key (vim-style)
+            navigationState.pop()
         }
-        .onKeyPress("\r") {  // Enter key
-            if isComplete || errorMessage != nil {
-                navigationState.pop()
-            }
+        .onKeyPress("\u{1B}") {  // Escape key - always go back
+            navigationState.pop()
         }
     }
 
@@ -227,7 +221,7 @@ struct TUISourceScanView: View {
 
             Text("")
             HStack {
-                Text("Press Enter to continue")
+                Text("Press 'h' or Esc to go back")
                 Spacer()
             }
         }
@@ -246,7 +240,7 @@ struct TUISourceScanView: View {
             }
             Text("")
             HStack {
-                Text("Press Enter to go back")
+                Text("Press 'h' or Esc to go back")
                 Spacer()
             }
         }
@@ -257,10 +251,10 @@ struct TUISourceScanView: View {
             Text(TUITheme.divider(width: 60))
             HStack {
                 if isScanning {
-                    Text("[Esc/c] Cancel Scan")
-                } else if isComplete || errorMessage != nil {
-                    Text("[Enter] Done")
+                    Text("[c] Cancel Scan")
+                    Text("  ")
                 }
+                Text("[h/Esc] Back")
                 Spacer()
             }
         }
@@ -288,7 +282,7 @@ struct TUISourceScanView: View {
             // Get the SourcePath to scan
             let sourcePathRepo = dependencies.sourcePathRepository
             guard let sourcePath = try await sourcePathRepo.getByPathId(sourceId: sourceId, pathId: pathId) else {
-                errorMessage = "Source path not found"
+                errorMessage = "Source path not found (sourceId: \(sourceId), pathId: \(pathId)). Try re-syncing the source from management view."
                 isScanning = false
                 return
             }

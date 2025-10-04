@@ -401,8 +401,16 @@ struct TUISourceManagementView: View {
     }
 
     private func submitNewSource(path: String) async {
-        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPath.isEmpty else {
+        // Strip whitespace and quotes (single or double)
+        var cleanPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Remove surrounding quotes if present
+        if (cleanPath.hasPrefix("'") && cleanPath.hasSuffix("'")) ||
+           (cleanPath.hasPrefix("\"") && cleanPath.hasSuffix("\"")) {
+            cleanPath = String(cleanPath.dropFirst().dropLast())
+        }
+
+        guard !cleanPath.isEmpty else {
             showAddDialog = false
             return
         }
@@ -417,7 +425,7 @@ struct TUISourceManagementView: View {
             // Add the source using registerSourcePath
             let newSource = try await dependencies.sourceService.registerSourcePath(
                 userId: userId,
-                path: trimmedPath,
+                path: cleanPath,
                 type: .iCloud
             )
 
@@ -428,16 +436,23 @@ struct TUISourceManagementView: View {
                 return
             }
 
-            let url = URL(fileURLWithPath: trimmedPath)
+            let url = URL(fileURLWithPath: cleanPath)
             let syncService = dependencies.sourceService.syncService()
-            _ = try await syncService.syncDir(
+            let syncedSource = try await syncService.syncDir(
                 sourceId: sourceId,
                 folderURL: url,
                 onCurrentURL: nil,
                 onSetLoading: nil
             )
 
-            // Reload sources
+            // Verify sync succeeded
+            if syncedSource == nil {
+                errorMessage = "Failed to sync directory structure for: \(cleanPath)"
+                isLoading = false
+                return
+            }
+
+            // Reload sources to get updated pathId
             await loadSources()
         } catch {
             errorMessage = "Failed to add source: \(error.localizedDescription)"
