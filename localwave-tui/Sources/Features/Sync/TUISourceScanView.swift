@@ -75,8 +75,18 @@ struct TUISourceScanView: View {
             // Auto-start scanning when view appears
             Task { await startScanning() }
         }
-        .onKeyPress("c") { cancelScanning() }
-        .onKeyPress("\u{1B}") { cancelScanning() }  // Escape key
+        .onKeyPress("c") {
+            if isScanning {
+                cancelScanning()
+            }
+        }
+        .onKeyPress("\u{1B}") {  // Escape key
+            if isScanning {
+                cancelScanning()
+            } else if isComplete || errorMessage != nil {
+                navigationState.pop()
+            }
+        }
         .onKeyPress("\r") {  // Enter key
             if isComplete || errorMessage != nil {
                 navigationState.pop()
