@@ -22,6 +22,10 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
 
     public weak var delegate: AudioPlayerDelegate?
 
+    // MARK: - Initialization
+
+    public init() {}
+
     // MARK: - AudioPlayerProtocol Properties
 
     public private(set) var isPlaying: Bool = false

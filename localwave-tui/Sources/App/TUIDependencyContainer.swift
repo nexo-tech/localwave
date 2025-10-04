@@ -92,8 +92,8 @@ class TUIDependencyContainer {
         playlistSongRepo = try SQLitePlaylistSongRepository(db: db)
         backgroundFileService = BackgroundFileService(songRepo: songRepo)
 
-        // Initialize player view model with mock audio player
-        let audioPlayer = TUIMockAudioPlayer()
+        // Initialize player view model with real CLI audio player
+        let audioPlayer = CLIAudioPlayerAdapter()
         playerViewModel = BasePlayerViewModel(
             player: audioPlayer,
             playerPersistenceService: playerPersistenceService,
