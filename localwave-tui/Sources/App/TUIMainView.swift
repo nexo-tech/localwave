@@ -69,6 +69,20 @@ struct TUIMainView: View {
                 path: path,
                 navigationState: navigationState
             )
+        case .artistDetail(let artist):
+            VStack {
+                HStack {
+                    Text("Artist: \(artist)")
+                    Spacer()
+                }
+                Text("")
+                Text("Artist detail view coming soon (Task 3.2)")
+                Text("")
+                Text("Press 'h' or Esc to go back")
+                Spacer()
+            }
+            .onKeyPress("h") { navigationState.wrappedValue.pop() }
+            .onKeyPress("\u{1B}") { navigationState.wrappedValue.pop() }
         default:
             Text("Route not implemented yet")
         }
@@ -80,7 +94,7 @@ struct TUIMainView: View {
         case .sync:
             TUISyncView(dependencies: dependencies, navigationState: navigationState)
         case .artists:
-            ArtistsPlaceholder()
+            TUIArtistListView(dependencies: dependencies, navigationState: navigationState)
         case .albums:
             AlbumsPlaceholder()
         case .songs:
