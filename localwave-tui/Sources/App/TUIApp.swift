@@ -10,6 +10,7 @@ import os
 import LocalWaveDomain
 import LocalWaveCore
 import LocalWaveData
+import SwiftTUI
 
 /// Main TUI application class that coordinates the terminal interface.
 /// Follows the same architectural patterns as the iOS app but adapted for CLI.
@@ -37,48 +38,10 @@ class TUIApp {
         // Trigger app launch logic (same as iOS)
         dependencies.handleAppLaunch()
 
-        // Print welcome message
-        printWelcome()
-
-        // Show database stats
-        await showDatabaseStats()
-
-        // TODO: Phase 2 - Initialize SwiftTUI application
-        // For now, just show a placeholder message
-        print("\n📻 LocalWave TUI v1.0")
-        print("Terminal interface coming soon...")
-        print("\nPress Ctrl+C to exit")
-
-        // Keep app running
-        try await Task.sleep(for: .seconds(3600))
+        // Launch SwiftTUI application
+        try await Application(rootView: TUIMainView(dependencies: dependencies)).start()
     }
 
-    private func showDatabaseStats() async {
-        do {
-            let artists = try await dependencies.songRepository.getAllArtists()
-            let albums = try await dependencies.songRepository.getAllAlbums()
-            let playlists = try await dependencies.playlistRepo.getAll()
-
-            print("\n📊 Database Stats:")
-            print("   Artists: \(artists.count)")
-            print("   Albums: \(albums.count)")
-            print("   Playlists: \(playlists.count)")
-        } catch {
-            logger.error("Failed to load database stats: \(error)")
-        }
-    }
-
-    private func printWelcome() {
-        print("""
-        ╔════════════════════════════════════════════╗
-        ║                                            ║
-        ║           🎵 LocalWave TUI 🎵             ║
-        ║                                            ║
-        ║     Offline-First Music Player for CLI    ║
-        ║                                            ║
-        ╚════════════════════════════════════════════╝
-        """)
-    }
 
     // MARK: - Helper Methods for Future Phases
 
