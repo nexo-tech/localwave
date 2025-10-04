@@ -106,21 +106,21 @@ struct TUISourceBrowseView: View {
             }
             Task { await loadItems() }
         }
-        // Navigation
-        .onKeyPress("j") { selectNext() }
-        .onKeyPress("k") { selectPrevious() }
-        .onKeyPress("g") { selectFirst() }
-        .onKeyPress("G") { selectLast() }
-        // Pagination
-        .onKeyPress("u") { pageUp() }    // 'u' for page up
-        .onKeyPress("d") { pageDown() }  // 'd' for page down
-        // Actions
-        .onKeyPress("l") { openOrEnterSelected() }
-        .onKeyPress("\r") { openOrEnterSelected() }
-        .onKeyPress("h") { goBack() }
-        .onKeyPress(" ") { toggleSelectedCheckbox() }  // Space to toggle
-        .onKeyPress("i") { Task { await importSelected() } }
-        .onKeyPress("/") { searchMode = true }
+        // Navigation (only when not in search mode)
+        .onKeyPress("j") { if !searchMode { selectNext() } }
+        .onKeyPress("k") { if !searchMode { selectPrevious() } }
+        .onKeyPress("g") { if !searchMode { selectFirst() } }
+        .onKeyPress("G") { if !searchMode { selectLast() } }
+        // Pagination (only when not in search mode)
+        .onKeyPress("u") { if !searchMode { pageUp() } }
+        .onKeyPress("d") { if !searchMode { pageDown() } }
+        // Actions (only when not in search mode)
+        .onKeyPress("l") { if !searchMode { openOrEnterSelected() } }
+        .onKeyPress("\r") { if !searchMode { openOrEnterSelected() } }
+        .onKeyPress("h") { if !searchMode { goBack() } }
+        .onKeyPress(" ") { if !searchMode { toggleSelectedCheckbox() } }
+        .onKeyPress("i") { if !searchMode { Task { await importSelected() } } }
+        .onKeyPress("/") { if !searchMode { searchMode = true } }
         .onKeyPress("\u{1B}") { handleEscape() }
     }
 
@@ -137,13 +137,25 @@ struct TUISourceBrowseView: View {
     }
 
     private var searchBarView: some View {
-        HStack {
-            Text("Search: ")
-            TextField(placeholder: "Type to search...") { query in
-                searchTerm = query
-                Task { await loadItems() }
+        VStack(spacing: 0) {
+            HStack {
+                Text("Search mode - type and press Enter to search, Esc to exit")
+                Spacer()
             }
-            Spacer()
+            HStack {
+                Text("Query: ")
+                TextField(placeholder: "Type search term...") { query in
+                    searchTerm = query
+                    Task { await loadItems() }
+                }
+                Spacer()
+            }
+            if !searchTerm.isEmpty {
+                HStack {
+                    Text("Searching for: \"\(searchTerm)\"")
+                    Spacer()
+                }
+            }
         }
     }
 
