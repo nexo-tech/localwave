@@ -133,8 +133,10 @@ struct TUISyncView: View {
 
     private func openSelectedSource() {
         guard let sourceId = selectedSourceId else { return }
-        // Navigate to source browse view
-        navigationState.push(.sourceBrowse(sourceId: sourceId, parentPathId: nil))
+        guard let source = sources.first(where: { $0.id == sourceId }) else { return }
+
+        // Navigate to source browse view with source's pathId as root
+        navigationState.push(.sourceBrowse(sourceId: sourceId, parentPathId: source.pathId))
     }
 
     private func openSourceManagement() {

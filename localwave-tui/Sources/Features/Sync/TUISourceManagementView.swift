@@ -354,8 +354,8 @@ struct TUISourceManagementView: View {
         let source = sources[selectedIndex]
         guard let sourceId = source.id else { return }
 
-        // Navigate to source browse view
-        navigationState.push(.sourceBrowse(sourceId: sourceId, parentPathId: nil))
+        // Navigate to source browse view with source's pathId as root
+        navigationState.push(.sourceBrowse(sourceId: sourceId, parentPathId: source.pathId))
     }
 
     private func confirmDelete() {
