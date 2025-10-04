@@ -19,6 +19,7 @@ public enum NavigationRoute: Hashable, Equatable {
     case playlistDetail(playlistId: Int64)
     case player
     case search(query: String)
+    case globalSearch
     // Sync routes
     case sync
     case sourceManagement
@@ -70,6 +71,8 @@ public struct NavigationState {
                 components.append("Player")
             case .search(let query):
                 components.append("Search: \(query)")
+            case .globalSearch:
+                components.append("Search")
             case .sync:
                 components.append("Sync")
             case .sourceManagement:

@@ -33,7 +33,7 @@ struct TUIMainView: View {
         // Navigation
         .onKeyPress("q") { /* TODO: quit app */ }
         .onKeyPress("?") { /* TODO: show help */ }
-        .onKeyPress("/") { /* TODO: show search */ }
+        .onKeyPress("/") { navigationState.push(.globalSearch) }
     }
 
     @ViewBuilder
@@ -73,6 +73,8 @@ struct TUIMainView: View {
             TUIArtistDetailView(dependencies: dependencies, artist: artist, navigationState: navigationState)
         case .albumDetail(let album, let artist):
             TUIAlbumDetailView(dependencies: dependencies, albumName: album, artist: artist, navigationState: navigationState)
+        case .globalSearch:
+            TUIGlobalSearchView(dependencies: dependencies, navigationState: navigationState)
         default:
             Text("Route not implemented yet")
         }

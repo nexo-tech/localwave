@@ -41,6 +41,10 @@ struct TUISongListView: View {
     // Currently playing (placeholder - would come from player state)
     @State private var currentlyPlayingSongId: Int64? = nil
 
+    // Editor state
+    @State private var showEditor = false
+    @State private var songToEdit: Song? = nil
+
     var filteredSongs: [Song] {
         guard !searchTerm.isEmpty else { return songs }
         return songs.filter { song in
@@ -58,6 +62,27 @@ struct TUISongListView: View {
     }
 
     var body: some View {
+        ZStack {
+            mainContent
+            if showEditor, let song = songToEdit {
+                TUISongEditorView(
+                    dependencies: dependencies,
+                    song: song,
+                    onSave: {
+                        showEditor = false
+                        songToEdit = nil
+                        await loadSongs()
+                    },
+                    onCancel: {
+                        showEditor = false
+                        songToEdit = nil
+                    }
+                )
+            }
+        }
+    }
+
+    private var mainContent: some View {
         VStack(spacing: 1) {
             // Header
             HStack {
@@ -103,10 +128,12 @@ struct TUISongListView: View {
         .onKeyPress(" ") { if !searchMode { playSong() } }
         .onKeyPress("q") { if !searchMode { queueSong() } }
         .onKeyPress("Q") { if !searchMode { queueSong() } }
-        .onKeyPress("p") { if !searchMode { addToPlaylist() } }
-        .onKeyPress("P") { if !searchMode { addToPlaylist() } }
-        .onKeyPress("r") { if !searchMode { Task { await loadSongs() } } }
-        .onKeyPress("/") { if !searchMode { searchMode = true } }
+        .onKeyPress("p") { if !searchMode && !showEditor { addToPlaylist() } }
+        .onKeyPress("P") { if !searchMode && !showEditor { addToPlaylist() } }
+        .onKeyPress("e") { if !searchMode && !showEditor { editSong() } }
+        .onKeyPress("E") { if !searchMode && !showEditor { editSong() } }
+        .onKeyPress("r") { if !searchMode && !showEditor { Task { await loadSongs() } } }
+        .onKeyPress("/") { if !searchMode && !showEditor { searchMode = true } }
         .onKeyPress("\u{1B}") { handleEscape() }
     }
 
@@ -247,6 +274,8 @@ struct TUISongListView: View {
                     Text("[q] Queue")
                     Text("  ")
                     Text("[p] Playlist")
+                    Text("  ")
+                    Text("[e] Edit")
                     Spacer()
                 }
                 HStack {
@@ -303,6 +332,12 @@ struct TUISongListView: View {
         let song = filteredSongs[selectedIndex]
         // TODO: Implement playlist integration
         errorMessage = "Playlist functionality coming soon for: \(song.title)"
+    }
+
+    private func editSong() {
+        guard selectedIndex < filteredSongs.count else { return }
+        songToEdit = filteredSongs[selectedIndex]
+        showEditor = true
     }
 
     private func handleEscape() {
