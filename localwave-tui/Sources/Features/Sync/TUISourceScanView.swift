@@ -5,6 +5,7 @@
 //  Created by Claude Code on 04.10.2025.
 //
 
+import Foundation
 import SwiftTUI
 import LocalWaveDomain
 import LocalWaveCore
@@ -36,10 +37,17 @@ struct TUISourceScanView: View {
     @State private var totalFiles: Int = 0
     @State private var processedFiles: Int = 0
 
+    // Time tracking
+    @State private var startTime: Date?
+    @State private var estimatedTimeRemaining: String = ""
+    @State private var elapsedTime: String = ""
+
     // Stats
     @State private var addedCount: Int = 0
     @State private var updatedCount: Int = 0
     @State private var errorCount: Int = 0
+    @State private var skippedCount: Int = 0
+    @State private var errorMessages: [String] = []
 
     var body: some View {
         VStack(spacing: 1) {
@@ -86,18 +94,25 @@ struct TUISourceScanView: View {
 
     private var scanningView: some View {
         VStack(spacing: 1) {
-            // Progress bar
+            // Progress bar with time estimate
             HStack {
-                Text("Progress: ")
+                Text("Scanning...")
                 Text(TUITheme.Icons.music)
                 Spacer()
             }
-            TUIProgressBar(
-                value: progress,
-                width: TUITheme.Layout.progressBarWidthWide,
-                label: nil,
-                showPercentage: true
-            )
+
+            HStack {
+                TUIProgressBar(
+                    value: progress,
+                    width: TUITheme.Layout.progressBarWidthWide,
+                    label: nil,
+                    showPercentage: true
+                )
+                if !estimatedTimeRemaining.isEmpty && progress > 0.05 {
+                    Text(" - \(estimatedTimeRemaining) remaining")
+                }
+                Spacer()
+            }
             Text("")
 
             // Current file
@@ -107,7 +122,7 @@ struct TUISourceScanView: View {
             }
             HStack {
                 Text("  ")
-                Text(currentFile.isEmpty ? "(gathering files...)" : currentFile)
+                Text(currentFile.isEmpty ? "(gathering files...)" : TUITheme.truncate(currentFile, width: 60))
                 Spacer()
             }
             Text("")
@@ -115,15 +130,26 @@ struct TUISourceScanView: View {
             // Stats
             HStack {
                 Text(TUIColors.Indicators.success("Added: \(addedCount)"))
-                Spacer()
-            }
-            HStack {
+                Text("  ")
                 Text("Updated: \(updatedCount)")
+                if skippedCount > 0 {
+                    Text("  ")
+                    Text("Skipped: \(skippedCount)")
+                }
                 Spacer()
             }
             if errorCount > 0 {
                 HStack {
                     Text(TUIColors.Indicators.error("Errors: \(errorCount)"))
+                    Spacer()
+                }
+            }
+
+            // Elapsed time
+            if !elapsedTime.isEmpty {
+                Text("")
+                HStack {
+                    Text("Elapsed: \(elapsedTime)")
                     Spacer()
                 }
             }
@@ -138,6 +164,7 @@ struct TUISourceScanView: View {
             }
             Text("")
 
+            // Summary stats
             HStack {
                 Text(TUITheme.Icons.checkmark + " Added: \(addedCount) new songs")
                 Spacer()
@@ -146,12 +173,48 @@ struct TUISourceScanView: View {
                 Text(TUITheme.Icons.checkmark + " Updated: \(updatedCount) existing songs")
                 Spacer()
             }
+            if skippedCount > 0 {
+                HStack {
+                    Text("  Skipped: \(skippedCount) files")
+                    Spacer()
+                }
+            }
             if errorCount > 0 {
                 HStack {
                     Text(TUITheme.Icons.error + " Errors: \(errorCount)")
                     Spacer()
                 }
+                // Show first few error messages
+                if !errorMessages.isEmpty {
+                    Text("")
+                    HStack {
+                        Text("Error details:")
+                        Spacer()
+                    }
+                    ForEach(errorMessages.prefix(3), id: \.self) { msg in
+                        HStack {
+                            Text("  • \(TUITheme.truncate(msg, width: 70))")
+                            Spacer()
+                        }
+                    }
+                    if errorMessages.count > 3 {
+                        HStack {
+                            Text("  ... and \(errorMessages.count - 3) more")
+                            Spacer()
+                        }
+                    }
+                }
             }
+
+            // Total time
+            if !elapsedTime.isEmpty {
+                Text("")
+                HStack {
+                    Text("Total time: \(elapsedTime)")
+                    Spacer()
+                }
+            }
+
             Text("")
             HStack {
                 Text("Press Enter to continue")
@@ -207,6 +270,9 @@ struct TUISourceScanView: View {
         addedCount = 0
         updatedCount = 0
         errorCount = 0
+        skippedCount = 0
+        errorMessages = []
+        startTime = Date()
 
         do {
             // Get the SourcePath to scan
@@ -227,7 +293,9 @@ struct TUISourceScanView: View {
             // Track stats
             var addedSongs = 0
             var updatedSongs = 0
+            var skipped = 0
             var errors = 0
+            var errorsList: [String] = []
             var lastProcessedFile = ""
 
             // Import with progress callback
@@ -251,6 +319,10 @@ struct TUISourceScanView: View {
                         self.addedCount = addedSongs
                         self.updatedCount = updatedSongs
                         self.errorCount = errors
+                        self.skippedCount = skipped
+
+                        // Update time estimates
+                        self.updateTimeEstimates()
                     }
                 }
             )
@@ -258,13 +330,16 @@ struct TUISourceScanView: View {
             // Completion
             isComplete = true
             isScanning = false
+            elapsedTime = formatElapsedTime(from: startTime ?? Date())
 
         } catch is CancellationError {
             errorMessage = "Scan cancelled by user"
             isScanning = false
+            elapsedTime = formatElapsedTime(from: startTime ?? Date())
         } catch {
             errorMessage = error.localizedDescription
             isScanning = false
+            elapsedTime = formatElapsedTime(from: startTime ?? Date())
         }
     }
 
@@ -279,6 +354,50 @@ struct TUISourceScanView: View {
     }
 
     // MARK: - Helper Methods
+
+    /// Update time estimates based on current progress
+    private func updateTimeEstimates() {
+        guard let start = startTime, progress > 0.05 else {
+            estimatedTimeRemaining = ""
+            elapsedTime = ""
+            return
+        }
+
+        let elapsed = Date().timeIntervalSince(start)
+        elapsedTime = formatElapsedTime(from: start)
+
+        // Estimate remaining time based on progress
+        let estimatedTotal = elapsed / progress
+        let remaining = estimatedTotal - elapsed
+
+        if remaining > 0 {
+            estimatedTimeRemaining = formatTimeInterval(remaining)
+        } else {
+            estimatedTimeRemaining = ""
+        }
+    }
+
+    /// Format elapsed time from start date
+    private func formatElapsedTime(from start: Date) -> String {
+        let elapsed = Date().timeIntervalSince(start)
+        return formatTimeInterval(elapsed)
+    }
+
+    /// Format time interval as human-readable string
+    private func formatTimeInterval(_ interval: TimeInterval) -> String {
+        let seconds = Int(interval)
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let secs = seconds % 60
+
+        if hours > 0 {
+            return String(format: "%dh %dm", hours, minutes)
+        } else if minutes > 0 {
+            return String(format: "%dm %ds", minutes, secs)
+        } else {
+            return String(format: "%ds", secs)
+        }
+    }
 
     /// Recursively gather all file paths under a directory
     private func gatherAllPaths(sourcePathRepo: SourcePathRepository, startPath: SourcePath) async throws -> [SourcePath] {
