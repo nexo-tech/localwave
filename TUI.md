@@ -20,8 +20,8 @@
 - [x] 3.3 Build album grid TUI view
 - [x] 3.4 Build album detail view (album songs)
 - [x] 3.5 Build all songs list TUI view
-- [ ] 3.6 Implement search functionality
-- [ ] 3.7 Implement song metadata editor
+- [x] 3.6 Implement search functionality
+- [x] 3.7 Implement song metadata editor
 
 ### Phase 4: Player Features
 - [ ] 4.1 Create mini player status bar
