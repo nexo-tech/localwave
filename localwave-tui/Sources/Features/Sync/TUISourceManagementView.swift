@@ -31,7 +31,6 @@ struct TUISourceManagementView: View {
     // Action states
     @State private var showAddDialog = false
     @State private var showDeleteConfirmation = false
-    @State private var newSourcePath = ""
     @State private var sourceToDelete: Source?
 
     var body: some View {
@@ -63,19 +62,58 @@ struct TUISourceManagementView: View {
         .onAppear {
             Task { await loadSources() }
         }
-        // Navigation
-        .onKeyPress("j") { selectNext() }
-        .onKeyPress("k") { selectPrevious() }
-        .onKeyPress("g") { selectFirst() }
-        .onKeyPress("G") { selectLast() }
-        // Actions
-        .onKeyPress("a") { showAddDialog = true }
-        .onKeyPress("A") { showAddDialog = true }
-        .onKeyPress("d") { confirmDelete() }
-        .onKeyPress("\u{7F}") { confirmDelete() }  // Delete key
-        .onKeyPress("r") { Task { await rescanSelected() } }
-        .onKeyPress("R") { Task { await loadSources() } }  // Refresh list
-        .onKeyPress("\r") { openSelected() }  // Enter - browse source
+        // Navigation (only when not in dialogs)
+        .onKeyPress("j") {
+            if !showAddDialog && !showDeleteConfirmation {
+                selectNext()
+            }
+        }
+        .onKeyPress("k") {
+            if !showAddDialog && !showDeleteConfirmation {
+                selectPrevious()
+            }
+        }
+        .onKeyPress("g") {
+            if !showAddDialog && !showDeleteConfirmation {
+                selectFirst()
+            }
+        }
+        .onKeyPress("G") {
+            if !showAddDialog && !showDeleteConfirmation {
+                selectLast()
+            }
+        }
+        // Actions (only when not in dialogs)
+        .onKeyPress("a") {
+            if !showAddDialog && !showDeleteConfirmation {
+                showAddDialog = true
+            }
+        }
+        .onKeyPress("A") {
+            if !showAddDialog && !showDeleteConfirmation {
+                showAddDialog = true
+            }
+        }
+        .onKeyPress("d") {
+            if !showAddDialog && !showDeleteConfirmation {
+                confirmDelete()
+            }
+        }
+        .onKeyPress("r") {
+            if !showAddDialog && !showDeleteConfirmation {
+                Task { await rescanSelected() }
+            }
+        }
+        .onKeyPress("R") {
+            if !showAddDialog && !showDeleteConfirmation {
+                Task { await loadSources() }
+            }
+        }
+        .onKeyPress("\r") {
+            if !showAddDialog && !showDeleteConfirmation {
+                openSelected()
+            }
+        }
         .onKeyPress("\u{1B}") { handleEscape() }  // Escape
     }
 
@@ -153,10 +191,12 @@ struct TUISourceManagementView: View {
                 }
                 Text("")
 
-                // Input prompt (simplified - in TUI we can't have a real text input easily)
+                // Input field - SwiftTUI's TextField handles keyboard input automatically
                 HStack {
                     Text("Path: ")
-                    Text("<use file picker or type path>")
+                    TextField(placeholder: "/Users/you/Music") { path in
+                        Task { await submitNewSource(path: path) }
+                    }
                     Spacer()
                 }
             }
@@ -164,23 +204,17 @@ struct TUISourceManagementView: View {
             VStack(spacing: 1) {
                 Text("")
 
-                // Note about TUI limitations
+                // Help text
                 HStack {
-                    Text(TUIColors.Indicators.info("Note: TUI doesn't support file picker"))
-                    Spacer()
-                }
-                HStack {
-                    Text("Please add sources through the iOS app, then")
-                    Spacer()
-                }
-                HStack {
-                    Text("use this view to manage them.")
+                    Text(TUIColors.Indicators.info("Tip: Type the full path and press Enter"))
                     Spacer()
                 }
                 Text("")
 
                 // Actions
                 HStack {
+                    Text("[Enter] Add Source")
+                    Text("  ")
                     Text("[Esc] Cancel")
                     Spacer()
                 }
@@ -363,6 +397,35 @@ struct TUISourceManagementView: View {
             cancelDelete()
         } else {
             navigationState.pop()
+        }
+    }
+
+    private func submitNewSource(path: String) async {
+        let trimmedPath = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else {
+            showAddDialog = false
+            return
+        }
+
+        showAddDialog = false
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let userId: Int64 = 1  // TODO: Get from user cloud service
+
+            // Add the source using registerSourcePath
+            _ = try await dependencies.sourceService.registerSourcePath(
+                userId: userId,
+                path: trimmedPath,
+                type: .iCloud
+            )
+
+            // Reload sources
+            await loadSources()
+        } catch {
+            errorMessage = "Failed to add source: \(error.localizedDescription)"
+            isLoading = false
         }
     }
 
