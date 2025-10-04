@@ -35,7 +35,7 @@ struct TUISourceBrowseView: View {
 
     // Pagination
     @State private var pageOffset = 0
-    private let pageSize = 20
+    private let pageSize = 10
 
     // Search
     @State private var searchMode = false
