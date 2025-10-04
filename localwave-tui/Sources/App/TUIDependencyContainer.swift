@@ -39,8 +39,8 @@ class TUIDependencyContainer {
     init() throws {
         logger.info("Initializing TUI DependencyContainer...")
 
-        // Setup SQLite connection (same as iOS)
-        guard let db = setupSQLiteConnection(dbName: "musicApp\(schemaVersion).sqlite") else {
+        // Setup SQLite connection with TUI-specific path
+        guard let db = setupTUISQLiteConnection(dbName: "musicApp\(schemaVersion).sqlite") else {
             throw CustomError.genericError("database initialisation failed")
         }
 
@@ -127,4 +127,57 @@ class TUIDependencyContainer {
     // Note: ViewModel factory methods will be added in Phase 3+
     // when TUI views are implemented. For now, repositories can be
     // accessed directly for testing.
+}
+
+// MARK: - TUI-specific Database Setup
+
+/// Setup SQLite connection with TUI-appropriate directory
+/// Uses XDG Base Directory specification: ~/.local/share/localwave
+/// Falls back to ~/Library/Application Support/localwave on macOS
+private func setupTUISQLiteConnection(dbName: String) -> Connection? {
+    let logger = Logger(subsystem: subsystem, category: "setupTUISQLiteConnection")
+    logger.debug("Setting up TUI database connection...")
+
+    // Get the appropriate data directory
+    let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+    let dataDir: String
+
+    #if os(macOS)
+    // macOS: Use Application Support (preferred) or XDG (for compatibility)
+    if let xdgDataHome = ProcessInfo.processInfo.environment["XDG_DATA_HOME"] {
+        dataDir = "\(xdgDataHome)/localwave"
+    } else {
+        // Default to macOS standard location
+        dataDir = "\(homeDir)/Library/Application Support/localwave"
+    }
+    #else
+    // Linux/Unix: Use XDG Base Directory specification
+    if let xdgDataHome = ProcessInfo.processInfo.environment["XDG_DATA_HOME"] {
+        dataDir = "\(xdgDataHome)/localwave"
+    } else {
+        dataDir = "\(homeDir)/.local/share/localwave"
+    }
+    #endif
+
+    // Create directory if it doesn't exist
+    do {
+        try FileManager.default.createDirectory(
+            atPath: dataDir,
+            withIntermediateDirectories: true,
+            attributes: nil
+        )
+    } catch {
+        logger.error("Failed to create data directory: \(error.localizedDescription)")
+        return nil
+    }
+
+    let dbFullPath = "\(dataDir)/\(dbName)"
+    logger.info("Database path: \(dbFullPath)")
+
+    do {
+        return try Connection(dbFullPath)
+    } catch {
+        logger.error("DB init error: \(error.localizedDescription)")
+        fatalError("DB init error: \(error)")
+    }
 }
