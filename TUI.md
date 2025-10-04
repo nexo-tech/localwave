@@ -26,10 +26,10 @@
 ### Phase 4: Player Features
 - [x] 4.1 Create mini player status bar
 - [x] 4.2 Create full player view (Now Playing)
-- [ ] 4.3 Implement playback controls (seek, actual audio playback)
-- [ ] 4.4 Build queue management (add/remove/reorder)
+- [x] 4.3 Implement playback controls (seek, shuffle, repeat)
+- [x] 4.4 Build queue management (add/remove/reorder/clear)
 - [x] 4.5 Add progress bar and time display
-- [x] 4.6 Implement shuffle/repeat modes (UI complete, needs backend)
+- [x] 4.6 Implement shuffle/repeat modes
 
 ### Phase 5: Playlist Management
 - [ ] 5.1 Build playlist list view
@@ -548,46 +548,74 @@ Up Next:
 
 ---
 
-### Task 4.3: Implement Playback Controls
-**Files to modify:**
-- `localwave-tui/Sources/Features/Player/TUIPlayerView.swift`
-- Wire up keyboard shortcuts to PlayerViewModel
+### Task 4.3: Implement Playback Controls ✅
+**Status**: Complete
 
-**Keyboard shortcuts:**
-- `Space`: Play/Pause
-- `→` or `N`: Next song
-- `←` or `P`: Previous song
+**Files modified:**
+- `localwave-tui/Sources/Features/Player/TUIPlayerView.swift`
+- `localwave/Sources/Features/Player/ViewModels/BasePlayerViewModel.swift`
+
+**Implementation:**
+- Added seekBySeconds(_:) to BasePlayerViewModel for -10s/+10s seeking
+- Added toggleShuffle() and toggleRepeat() convenience methods
+- Wired up all keyboard shortcuts to player controls
+- All action methods properly @MainActor isolated
+
+**Keyboard shortcuts implemented:**
+- `Space`: Play/Pause (togglePlayPause)
+- `P` / `N`: Previous/Next song
 - `[` / `]`: Seek -10s / +10s
-- `+` / `-`: Volume up/down
+- `+` / `-`: Volume up/down (10% increments)
+- `S`: Toggle shuffle on/off
+- `R`: Cycle repeat mode (none → all → one)
+- `Q`: Open queue management view
 
 ---
 
-### Task 4.4: Build Queue Management
-**Files to create:**
-- `localwave-tui/Sources/Features/Player/TUIQueueView.swift` (220 lines)
+### Task 4.4: Build Queue Management ✅
+**Status**: Complete
 
-**Description:**
-- Display current playback queue
-- Highlight current song (centered)
-- Support reordering with keyboard
-- Remove songs from queue
-- Clear queue option
-- Access via `Q` shortcut
+**Files created:**
+- `localwave-tui/Sources/Features/Player/TUIQueueView.swift` (328 lines)
 
-**UI mockup:**
+**Files modified:**
+- `localwave/Sources/Features/Player/ViewModels/BasePlayerViewModel.swift` (added queue methods)
+- `localwave-tui/Sources/TUIComponents/Navigation/NavigationStack.swift` (added .queue route)
+- `localwave-tui/Sources/App/TUIMainView.swift` (route handler)
+
+**Implementation:**
+- Display current playback queue with song index, artist, title
+- Highlight currently playing song with ♫ indicator
+- Queue stats: song count and estimated total duration
+- Vim-style navigation: j/k (up/down), g/G (first/last), u/d (page up/down)
+- Pagination: 10 items per page with auto-scroll
+- Remove songs: x key or Backspace (protects currently playing song)
+- Clear queue: c key (stops playback, clears all)
+- Reorder songs: K/J (Shift+K/J) to move up/down
+- Auto-centers on currently playing song when opened
+- Safe operations: prevents moving/removing currently playing song
+
+**BasePlayerViewModel queue methods:**
+- `removeFromQueue(at:)` - removes song, adjusts current index
+- `clearQueue()` - stops playback, clears all songs
+- `moveSong(from:to:)` - reorders queue using Int indices (TUI-compatible)
+- All operations persist via PlayerPersistenceService
+
+**UI implemented:**
 ```
 LocalWave > Queue
 
- Queue (5 songs - 18:32)
+ Queue (5 songs - 15:00)
 
-   1. Something - The Beatles                    3:03
-   2. Here Comes The Sun - The Beatles           3:06
- ♫ 3. Come Together - The Beatles                4:20  ◀ Now Playing
-   4. Maxwell's Silver Hammer - The Beatles      3:27
-   5. Oh! Darling - The Beatles                  3:26
+   1. Something - The Beatles
+   2. Here Comes The Sun - The Beatles
+ ♫ 3. Come Together - The Beatles  ◀ Now Playing
+   4. Maxwell's Silver Hammer - The Beatles
+   5. Oh! Darling - The Beatles
 
 ────────────────────────────────────────────────────────
-[↑↓] Select  [Ctrl+↑↓] Move  [Del] Remove  [C] Clear
+[j/k] Navigate  [K/J] Move Up/Down  [x] Remove  [c] Clear
+[Esc] Back
 ```
 
 ---
