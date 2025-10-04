@@ -77,6 +77,8 @@ struct TUISourceBrowseView: View {
                 importProgressView
             } else if selectedPathIds.count > 0 {
                 importButtonView
+            } else if !searchTerm.isEmpty {
+                searchResultsHeader
             }
 
             Text("")
@@ -146,16 +148,19 @@ struct TUISourceBrowseView: View {
                 Text("Query: ")
                 TextField(placeholder: "Type search term...") { query in
                     searchTerm = query
+                    searchMode = false  // Exit search mode after submitting
                     Task { await loadItems() }
                 }
                 Spacer()
             }
-            if !searchTerm.isEmpty {
-                HStack {
-                    Text("Searching for: \"\(searchTerm)\"")
-                    Spacer()
-                }
-            }
+        }
+    }
+
+    private var searchResultsHeader: some View {
+        HStack {
+            Text("Search results for: \"\(searchTerm)\"")
+            Text(" - Press '/' to search again, Esc to clear")
+            Spacer()
         }
     }
 
@@ -367,10 +372,15 @@ struct TUISourceBrowseView: View {
 
     private func handleEscape() {
         if searchMode {
+            // Cancel search input mode
             searchMode = false
+            searchTerm = ""
+        } else if !searchTerm.isEmpty {
+            // Clear search results and go back to browse
             searchTerm = ""
             Task { await loadItems() }
         } else {
+            // Exit browse view
             navigationState.pop()
         }
     }
