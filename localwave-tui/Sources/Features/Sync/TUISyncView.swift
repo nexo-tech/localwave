@@ -45,8 +45,7 @@ struct TUISyncView: View {
         // Actions
         .onKeyPress("l") { openSelectedSource() }  // vim: go right/into
         .onKeyPress("\r") { openSelectedSource() }  // Enter key
-        .onKeyPress("a") { /* TODO: add new source */ }
-        .onKeyPress("d") { /* TODO: delete source */ }
+        .onKeyPress("m") { openSourceManagement() }  // manage sources
         .onKeyPress("r") { Task { await loadSources() } }  // refresh
     }
 
@@ -102,9 +101,7 @@ struct TUISyncView: View {
                 Text(" ")
                 Text("[Enter/l] Open")
                 Text(" ")
-                Text("[a] Add")
-                Text(" ")
-                Text("[d] Delete")
+                Text("[m] Manage")
                 Text(" ")
                 Text("[r] Refresh")
                 Spacer()
@@ -138,6 +135,10 @@ struct TUISyncView: View {
         guard let sourceId = selectedSourceId else { return }
         // Navigate to source browse view
         navigationState.push(.sourceBrowse(sourceId: sourceId, parentPathId: nil))
+    }
+
+    private func openSourceManagement() {
+        navigationState.push(.sourceManagement)
     }
 
     private func selectNext() {

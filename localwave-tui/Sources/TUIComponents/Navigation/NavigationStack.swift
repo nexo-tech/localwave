@@ -21,6 +21,7 @@ public enum NavigationRoute: Hashable, Equatable {
     case search(query: String)
     // Sync routes
     case sync
+    case sourceManagement
     case sourceBrowse(sourceId: Int64, parentPathId: Int64?)
     case sourceScan(sourceId: Int64, pathId: Int64, path: String)
 }
@@ -71,6 +72,8 @@ public struct NavigationState {
                 components.append("Search: \(query)")
             case .sync:
                 components.append("Sync")
+            case .sourceManagement:
+                components.append("Source Management")
             case .sourceBrowse(_, let parentPathId):
                 if parentPathId == nil {
                     components.append("Browse Root")

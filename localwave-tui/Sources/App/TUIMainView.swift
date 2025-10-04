@@ -52,6 +52,8 @@ struct TUIMainView: View {
         switch route {
         case .sync:
             TUISyncView(dependencies: dependencies, navigationState: navigationState)
+        case .sourceManagement:
+            TUISourceManagementView(dependencies: dependencies, navigationState: navigationState)
         case .sourceBrowse(let sourceId, let parentPathId):
             TUISourceBrowseView(
                 dependencies: dependencies,
