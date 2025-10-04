@@ -10,7 +10,7 @@
 
 ### Phase 2: Core TUI Components 🔄
 - [x] 2.1 Implement base TUI navigation system
-- [x] 2.2 Document keyboard input limitations (deferred to Phase 7)
+- [x] 2.2 Implement keyboard input with onKeyPress (vim-style)
 - [ ] 2.3 Create reusable TUI component library
 - [ ] 2.4 Build TUI theme and styling system
 
@@ -136,27 +136,37 @@ Based on iOS app structure, TUI must implement:
 
 ---
 
-### Task 2.2: Fix Keyboard Input Handling ⚠️
-**Status**: SwiftTUI Limitation Identified
+### Task 2.2: Implement Keyboard Input with onKeyPress ✅
+**Status**: Complete - Using DandyLyons/SwiftTUI fork
 
-**SwiftTUI keyboard limitations:**
-- Only arrow keys are handled automatically by SwiftTUI
-- No `.onCharacter()` or `.onKey()` modifiers available
-- Character input only works with TextField component
-- Global keyboard shortcuts not easily supported
+**Updated dependency:**
+- Switched to `https://github.com/DandyLyons/SwiftTUI.git` branch `onKeyPress`
+- Provides `.onKeyPress(char:action:)` modifier for key handling
 
-**Alternative approach:**
-Since SwiftTUI lacks global keyboard event handling, tab switching will be done via:
-1. Arrow keys to navigate to tab bar
-2. Enter to select tab
-3. Or using a command TextField at bottom for shortcuts
+**Implemented keybindings:**
 
-**Workaround for Phase 2:**
-- Use arrow keys (←→) for tab navigation when focused on tab bar
-- Defer advanced keyboard shortcuts to Phase 7 (help system)
-- Consider TextField-based command input: Type "1" + Enter to switch to Artists
+**Tab Navigation:**
+- `1-5`: Direct tab switching (Artists, Albums, Songs, Playlists, Player)
+- `H`: Previous tab (vim-style)
+- `L`: Next tab (vim-style)
 
-**Decision**: Move advanced keyboard handling to Task 7.2 where we'll implement a command palette using TextField
+**Global shortcuts (placeholders for Phase 7):**
+- `q`: Quit application
+- `?`: Show help
+- `/`: Search
+
+**Vim-style philosophy:**
+All navigation follows vim conventions:
+- `hjkl`: Movement (h=left, j=down, k=up, l=right)
+- `H/L`: Tab navigation (horizontal movement)
+- Capital letters for "bigger" movements
+- Lowercase for granular control
+
+**API usage:**
+```swift
+.onKeyPress("1") { tabState.selectTab(.artists) }
+.onKeyPress("H") { selectPreviousTab() }
+```
 
 ---
 
@@ -1035,42 +1045,46 @@ LocalWave > Artists > The Beatles       142 songs · Queue: 5
 - Color is background-only
 - Limited to `.padding()` without parameters
 
-### Keyboard Shortcuts Summary
+### Keyboard Shortcuts Summary (Vim-Style)
 
 **Global:**
-- `1-5`: Switch tabs
+- `1-5`: Direct tab switching
+- `H/L`: Previous/Next tab (vim-style)
+- `q`: Quit
 - `?`: Help
 - `/`: Search
-- `Q`: Quit
 - `Esc`: Back/Cancel
 
-**Navigation:**
-- `↑↓`: Select item
+**Navigation (vim-style):**
+- `j/k`: Down/Up (select item)
+- `h/l`: Left/Right (or previous/next)
+- `gg`: Go to top
+- `G`: Go to bottom
 - `Enter`: Open/Confirm
-- `Tab`: Next section
-- `Shift+Tab`: Previous section
+- `Esc`: Back
 
 **Player:**
 - `Space`: Play/Pause
-- `→` or `N`: Next song
-- `←` or `P`: Previous song
+- `n`: Next song
+- `p`: Previous song
 - `[` / `]`: Seek -10s/+10s
-- `S`: Toggle Shuffle
-- `R`: Cycle Repeat
-- `Q`: Show Queue
+- `s`: Toggle Shuffle
+- `r`: Cycle Repeat
+- `q`: Show Queue (from player view)
 
-**Lists:**
-- `↑↓`: Navigate
-- `Space`: Toggle selection (multi-select)
-- `A`: Select all
-- `N`: Select none
-- `Del`: Remove item
+**Lists (vim-style):**
+- `j/k`: Navigate down/up
+- `v`: Toggle selection (visual mode)
+- `V`: Select all (visual line mode)
+- `d`: Delete/Remove item
+- `dd`: Delete selected
+- `yy`: Yank/Copy
 
 **Playlists:**
-- `A`: Add songs
-- `Ctrl+↑↓`: Reorder songs
-- `N`: New playlist
-- `R`: Rename playlist
+- `a`: Add songs
+- `i`: Insert mode (rename)
+- `n`: New playlist
+- `J/K`: Reorder songs (shift+j/k)
 
 ---
 
