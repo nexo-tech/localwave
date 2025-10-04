@@ -8,6 +8,9 @@
 import Foundation
 import os
 import SQLite
+import LocalWaveDomain
+import LocalWaveCore
+import LocalWaveData
 
 /// TUI-specific dependency injection container.
 /// Reuses all Data layer repositories and services from the iOS app,

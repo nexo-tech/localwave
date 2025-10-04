@@ -1,6 +1,8 @@
 import AVFoundation
 import CryptoKit
 import os
+import LocalWaveDomain
+import LocalWaveCore
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -9,7 +11,7 @@ private enum ImageFormat {
     case png
     case jpeg
 
-    var fileExtension: String {
+    public var fileExtension: String {
         switch self {
         case .png: return "png"
         case .jpeg: return "jpg"
@@ -17,11 +19,11 @@ private enum ImageFormat {
     }
 }
 
-actor DefaultSongImportService: SongImportService {
+public actor DefaultSongImportService: SongImportService {
     private var currentImportTask: Task<Void, Error>?
     private var isImporting = false
 
-    func cancelImport() {
+    public func cancelImport() {
         currentImportTask?.cancel()
         releaseSecurityAccess()
     }
@@ -32,7 +34,7 @@ actor DefaultSongImportService: SongImportService {
     private let sourceRepo: SourceRepository
     private var activeRootURLs: [Int64: URL] = [:]
 
-    init(
+    public init(
         songRepo: SongRepository,
         sourcePathRepo: SourcePathRepository,
         sourceRepo: SourceRepository
@@ -102,7 +104,7 @@ actor DefaultSongImportService: SongImportService {
         activeRootURLs.removeAll()
     }
 
-    func importPaths(
+    public func importPaths(
         paths: [SourcePath],
         onProgress: ((Double, URL) async -> Void)? = nil
     ) async throws {
@@ -145,7 +147,7 @@ actor DefaultSongImportService: SongImportService {
 
     /// Import all paths, recursively grabbing files from directories.
     /// - parameter onProgress: Called with (percentage from 0..100, currentFileURL).
-    func importImplementation(
+    public func importImplementation(
         paths: [SourcePath],
         onProgress: ((Double, URL) async -> Void)? = nil
     ) async throws {
@@ -293,7 +295,7 @@ actor DefaultSongImportService: SongImportService {
     // MARK: - Read metadata (iOS 16+)
 
     @available(iOS 16.0, *)
-    func readMetadataAVAsset(url: URL) async -> (
+    public func readMetadataAVAsset(url: URL) async -> (
         artist: String, title: String, album: String,
         albumArtist: String, releaseYear: Int?, trackNumber: Int?, discNumber: Int?
     ) {

@@ -8,6 +8,9 @@
 import Combine
 import Foundation
 import os
+import LocalWaveDomain
+import LocalWaveCore
+import LocalWaveData
 
 /// Platform-agnostic base player view model
 /// Contains all business logic that can be shared between iOS and TUI
@@ -265,7 +268,7 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
     // MARK: - Playlist Creation
 
     public func createPlaylist(name: String) async throws {
-        let newPlaylist = Playlist(id: nil, name: name, createdAt: Date(), updatedAt: nil)
+        let newPlaylist = Playlist(id: nil as Int64?, name: name, createdAt: Date(), updatedAt: nil as Date?)
         let createdPlaylist = try await playlistRepo.create(playlist: newPlaylist)
         guard let playlistId = createdPlaylist.id else { return }
 

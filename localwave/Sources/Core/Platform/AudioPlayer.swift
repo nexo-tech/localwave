@@ -11,6 +11,7 @@ import Foundation
 
 /// Platform-agnostic audio player protocol.
 /// Allows PlayerViewModel to work with both AVAudioPlayer (iOS) and CLI-based players (TUI).
+@MainActor
 public protocol AudioPlayerProtocol: AnyObject {
     /// Whether the player is currently playing
     var isPlaying: Bool { get }

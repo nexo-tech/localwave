@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import LocalWaveDomain
 
 #if canImport(UIKit)
 import UIKit

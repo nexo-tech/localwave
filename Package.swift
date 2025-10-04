@@ -4,14 +4,33 @@
 import PackageDescription
 
 let package = Package(
-    name: "localwave-tui",
+    name: "localwave",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v13),
+        .iOS(.v16)
     ],
     products: [
+        // TUI executable
         .executable(
             name: "localwave-tui",
             targets: ["localwave-tui"]
+        ),
+        // Shared libraries
+        .library(
+            name: "LocalWaveDomain",
+            targets: ["LocalWaveDomain"]
+        ),
+        .library(
+            name: "LocalWaveData",
+            targets: ["LocalWaveData"]
+        ),
+        .library(
+            name: "LocalWaveCore",
+            targets: ["LocalWaveCore"]
+        ),
+        .library(
+            name: "LocalWavePlayer",
+            targets: ["LocalWavePlayer"]
         )
     ],
     dependencies: [
@@ -21,48 +40,58 @@ let package = Package(
         .package(url: "https://github.com/stephencelis/SQLite.swift", from: "0.15.3")
     ],
     targets: [
-        // TUI executable target
+        // MARK: - Shared Library Targets
+
+        // Domain layer - pure models and protocols, no dependencies
+        .target(
+            name: "LocalWaveDomain",
+            dependencies: [],
+            path: "localwave/Sources/Domain"
+        ),
+
+        // Core layer - utilities, platform abstractions
+        .target(
+            name: "LocalWaveCore",
+            dependencies: ["LocalWaveDomain"],
+            path: "localwave/Sources/Core"
+        ),
+
+        // Data layer - repositories, services, SQLite
+        .target(
+            name: "LocalWaveData",
+            dependencies: [
+                "LocalWaveDomain",
+                "LocalWaveCore",
+                .product(name: "SQLite", package: "SQLite.swift")
+            ],
+            path: "localwave/Sources/Data"
+        ),
+
+        // Player layer - ViewModels and player logic
+        .target(
+            name: "LocalWavePlayer",
+            dependencies: [
+                "LocalWaveDomain",
+                "LocalWaveCore",
+                "LocalWaveData"
+            ],
+            path: "localwave/Sources/Features/Player/ViewModels"
+        ),
+
+        // MARK: - TUI Executable Target
+
         .executableTarget(
             name: "localwave-tui",
             dependencies: [
-                "SwiftTUI",
-                .product(name: "SQLite", package: "SQLite.swift")
+                "LocalWaveDomain",
+                "LocalWaveCore",
+                "LocalWaveData",
+                "LocalWavePlayer",
+                "SwiftTUI"
             ],
             path: "localwave-tui/Sources",
             swiftSettings: [
                 .unsafeFlags(["-parse-as-library"])
-            ]
-        ),
-        // Shared core library (Domain + Data layers)
-        // This allows code sharing between iOS and TUI targets
-        .target(
-            name: "LocalWaveCore",
-            dependencies: [
-                .product(name: "SQLite", package: "SQLite.swift")
-            ],
-            path: "localwave/Sources",
-            exclude: [
-                // Exclude iOS-specific files
-                "Features/Common/AppDelegate.swift",
-                "Features/Shared/TabState.swift",
-                "Features/Common/RepeatMode.swift",
-                "Features/Common/coverArt.swift",
-                // Exclude SwiftUI views (iOS only)
-                "Features/Library/Views",
-                "Features/Player/Views",
-                "Features/Playlists/Views",
-                "Features/Sync/Views",
-                "Features/Shared",
-                "Features/Common/ThemeProvider.swift",
-                "Features/Common/ErrorView.swift",
-                // Exclude AVFoundation-heavy ViewModels for now
-                "Features/Player/ViewModels"
-            ],
-            sources: [
-                "Core",
-                "Domain",
-                "Data"
-                // Note: BackgroundFileService already in Data/Services
             ]
         )
     ]

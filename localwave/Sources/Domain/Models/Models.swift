@@ -1,12 +1,29 @@
 import Foundation
 
-// models
+// MARK: - Search Results
+
+public struct PathSearchResult: Sendable {
+    public let pathId: Int64
+    public let rank: Double
+    public init(pathId: Int64, rank: Double) {
+        self.pathId = pathId
+        self.rank = rank
+    }
+}
+
+// MARK: - Models
+
 public struct User: Sendable {
     public let id: Int64?
     public let icloudId: Int64
+
+    public init(id: Int64?, icloudId: Int64) {
+        self.id = id
+        self.icloudId = icloudId
+    }
 }
 
-public enum SourceType: String, Codable, CaseIterable {
+public enum SourceType: String, Codable, CaseIterable, Sendable {
     case iCloud
 }
 
@@ -15,6 +32,13 @@ public struct Playlist: Identifiable, Sendable {
     public let name: String
     public let createdAt: Date
     public let updatedAt: Date?
+
+    public init(id: Int64?, name: String, createdAt: Date, updatedAt: Date?) {
+        self.id = id
+        self.name = name
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
 }
 
 public struct PlaylistSong: Identifiable, Sendable {
@@ -22,6 +46,13 @@ public struct PlaylistSong: Identifiable, Sendable {
     public let playlistId: Int64
     public let songId: Int64
     public let position: Int // New: For ordering
+
+    public init(id: Int64?, playlistId: Int64, songId: Int64, position: Int) {
+        self.id = id
+        self.playlistId = playlistId
+        self.songId = songId
+        self.position = position
+    }
 }
 
 public struct Source: Sendable, Identifiable {
@@ -36,6 +67,32 @@ public struct Source: Sendable, Identifiable {
     public var createdAt: Date
     public var lastSyncedAt: Date?
     public var updatedAt: Date?
+
+    public init(
+        id: Int64?,
+        dirPath: String,
+        pathId: Int64,
+        userId: Int64,
+        type: SourceType?,
+        totalPaths: Int?,
+        syncError: String?,
+        isCurrent: Bool,
+        createdAt: Date,
+        lastSyncedAt: Date?,
+        updatedAt: Date?
+    ) {
+        self.id = id
+        self.dirPath = dirPath
+        self.pathId = pathId
+        self.userId = userId
+        self.type = type
+        self.totalPaths = totalPaths
+        self.syncError = syncError
+        self.isCurrent = isCurrent
+        self.createdAt = createdAt
+        self.lastSyncedAt = lastSyncedAt
+        self.updatedAt = updatedAt
+    }
 
     public var stableId: Int64 {
         id ?? Int64(abs(dirPath.hashValue))
@@ -57,6 +114,32 @@ public struct SourcePath: Sendable {
 
     public let createdAt: Date
     public let updatedAt: Date?
+
+    public init(
+        id: Int64?,
+        sourceId: Int64,
+        pathId: Int64,
+        parentPathId: Int64?,
+        name: String,
+        relativePath: String,
+        isDirectory: Bool,
+        fileHashSHA256: Data?,
+        runId: Int64,
+        createdAt: Date,
+        updatedAt: Date?
+    ) {
+        self.id = id
+        self.sourceId = sourceId
+        self.pathId = pathId
+        self.parentPathId = parentPathId
+        self.name = name
+        self.relativePath = relativePath
+        self.isDirectory = isDirectory
+        self.fileHashSHA256 = fileHashSHA256
+        self.runId = runId
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
 
     public func copyWith(id: Int64?) -> SourcePath {
         return SourcePath(
@@ -93,7 +176,7 @@ public struct Album: Identifiable, Hashable {
 }
 
 // 1. Add file state tracking to Song model
-public enum FileState: Int, Codable {
+public enum FileState: Int, Codable, Sendable {
     case bookmarkOnly
     case copyPending
     case copied
@@ -127,6 +210,42 @@ public struct Song: Sendable, Identifiable, Equatable {
 
     public let localFilePath: String? // Path in app's Documents directory
     public var fileState: FileState
+
+    public init(
+        id: Int64?,
+        songKey: Int64,
+        artist: String,
+        title: String,
+        album: String,
+        albumArtist: String,
+        releaseYear: Int?,
+        discNumber: Int?,
+        trackNumber: Int?,
+        coverArtPath: String?,
+        bookmark: Data?,
+        pathHash: Int64,
+        createdAt: Date,
+        updatedAt: Date?,
+        localFilePath: String?,
+        fileState: FileState
+    ) {
+        self.id = id
+        self.songKey = songKey
+        self.artist = artist
+        self.title = title
+        self.album = album
+        self.albumArtist = albumArtist
+        self.releaseYear = releaseYear
+        self.discNumber = discNumber
+        self.trackNumber = trackNumber
+        self.coverArtPath = coverArtPath
+        self.bookmark = bookmark
+        self.pathHash = pathHash
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.localFilePath = localFilePath
+        self.fileState = fileState
+    }
 
     public func copyWith(_ fp: String, _ st: FileState) -> Song {
         Song(

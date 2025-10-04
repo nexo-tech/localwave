@@ -6,8 +6,10 @@
 //
 
 import Foundation
-import LocalWaveCore
 import os
+import LocalWaveDomain
+import LocalWaveCore
+import LocalWaveData
 
 /// Main TUI application class that coordinates the terminal interface.
 /// Follows the same architectural patterns as the iOS app but adapted for CLI.
