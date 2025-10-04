@@ -114,6 +114,7 @@ struct TUISourceBrowseView: View {
         // Pagination (using different keys to avoid Ctrl+D quitting terminal)
         .onKeyPress("u") { pageUp() }    // 'u' for up
         .onKeyPress("d") { pageDown() }  // 'd' for down
+        .onKeyPress("\u{04}") { /* Intercept Ctrl+D to prevent app exit */ }
         // Actions
         .onKeyPress("l") { openOrEnterSelected() }
         .onKeyPress("\r") { openOrEnterSelected() }

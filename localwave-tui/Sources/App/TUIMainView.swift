@@ -34,6 +34,8 @@ struct TUIMainView: View {
         .onKeyPress("q") { /* TODO: quit app */ }
         .onKeyPress("?") { /* TODO: show help */ }
         .onKeyPress("/") { /* TODO: show search */ }
+        // Prevent Ctrl+D from quitting app
+        .onKeyPress("\u{04}") { /* Intercept Ctrl+D to prevent exit */ }
     }
 
     @ViewBuilder
