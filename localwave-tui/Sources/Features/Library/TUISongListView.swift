@@ -125,9 +125,9 @@ struct TUISongListView: View {
         .onKeyPress("u") { if !searchMode { pageUp() } }
         .onKeyPress("d") { if !searchMode { pageDown() } }
         // Actions (only when not in search mode)
-        .onKeyPress(" ") { if !searchMode { playSong() } }
-        .onKeyPress("q") { if !searchMode { queueSong() } }
-        .onKeyPress("Q") { if !searchMode { queueSong() } }
+        .onKeyPress(" ") { if !searchMode { Task { @MainActor in playSong() } } }
+        .onKeyPress("q") { if !searchMode { Task { @MainActor in queueSong() } } }
+        .onKeyPress("Q") { if !searchMode { Task { @MainActor in queueSong() } } }
         .onKeyPress("p") { if !searchMode && !showEditor { addToPlaylist() } }
         .onKeyPress("P") { if !searchMode && !showEditor { addToPlaylist() } }
         .onKeyPress("e") { if !searchMode && !showEditor { editSong() } }
@@ -313,18 +313,25 @@ struct TUISongListView: View {
         isLoading = false
     }
 
+    @MainActor
     private func playSong() {
         guard selectedIndex < filteredSongs.count else { return }
         let song = filteredSongs[selectedIndex]
-        // TODO: Implement player integration
-        errorMessage = "Play functionality coming soon for: \(song.title)"
+
+        // Configure queue with all filtered songs, starting from selected
+        let playerVM = dependencies.playerViewModel
+        playerVM.configureQueue(songs: filteredSongs, startIndex: selectedIndex)
+        playerVM.playSong(song)
     }
 
+    @MainActor
     private func queueSong() {
         guard selectedIndex < filteredSongs.count else { return }
         let song = filteredSongs[selectedIndex]
-        // TODO: Implement queue integration
-        errorMessage = "Queue functionality coming soon for: \(song.title)"
+
+        // Add song to the end of current queue
+        let playerVM = dependencies.playerViewModel
+        playerVM.addToQueue(song)
     }
 
     private func addToPlaylist() {

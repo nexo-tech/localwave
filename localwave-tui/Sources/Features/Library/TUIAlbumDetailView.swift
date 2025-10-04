@@ -83,11 +83,11 @@ struct TUIAlbumDetailView: View {
         .onKeyPress("u") { pageUp() }
         .onKeyPress("d") { pageDown() }
         // Actions
-        .onKeyPress(" ") { playSong() }
-        .onKeyPress("q") { queueSong() }
-        .onKeyPress("Q") { queueSong() }
-        .onKeyPress("a") { playAlbum() }
-        .onKeyPress("A") { queueAlbum() }
+        .onKeyPress(" ") { Task { @MainActor in playSong() } }
+        .onKeyPress("q") { Task { @MainActor in queueSong() } }
+        .onKeyPress("Q") { Task { @MainActor in queueSong() } }
+        .onKeyPress("a") { Task { @MainActor in playAlbum() } }
+        .onKeyPress("A") { Task { @MainActor in queueAlbum() } }
         .onKeyPress("p") { addToPlaylist() }
         .onKeyPress("P") { addToPlaylist() }
         .onKeyPress("h") { navigationState.pop() }
@@ -261,30 +261,46 @@ struct TUIAlbumDetailView: View {
         isLoading = false
     }
 
+    @MainActor
     private func playSong() {
         guard selectedIndex < songs.count else { return }
         let song = songs[selectedIndex]
-        // TODO: Implement player integration
-        errorMessage = "Play functionality coming soon for: \(song.title)"
+
+        // Configure queue with all album songs, starting from selected
+        let playerVM = dependencies.playerViewModel
+        playerVM.configureQueue(songs: songs, startIndex: selectedIndex)
+        playerVM.playSong(song)
     }
 
+    @MainActor
     private func playAlbum() {
         guard !songs.isEmpty else { return }
-        // TODO: Implement play album functionality
-        errorMessage = "Play album functionality coming soon"
+
+        // Play album from the beginning
+        let playerVM = dependencies.playerViewModel
+        playerVM.configureQueue(songs: songs, startIndex: 0)
+        playerVM.playSong(songs[0])
     }
 
+    @MainActor
     private func queueSong() {
         guard selectedIndex < songs.count else { return }
         let song = songs[selectedIndex]
-        // TODO: Implement queue integration
-        errorMessage = "Queue functionality coming soon for: \(song.title)"
+
+        // Add song to the end of current queue
+        let playerVM = dependencies.playerViewModel
+        playerVM.addToQueue(song)
     }
 
+    @MainActor
     private func queueAlbum() {
         guard !songs.isEmpty else { return }
-        // TODO: Implement queue album functionality
-        errorMessage = "Queue album functionality coming soon"
+
+        // Add all album songs to queue
+        let playerVM = dependencies.playerViewModel
+        for song in songs {
+            playerVM.addToQueue(song)
+        }
     }
 
     private func addToPlaylist() {

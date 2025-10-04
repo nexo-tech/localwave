@@ -59,9 +59,9 @@ struct TUIGlobalSearchView: View {
         .onKeyPress("G") { selectLast() }
         // Actions
         .onKeyPress("\r") { openSelected() }
-        .onKeyPress(" ") { playSong() }
-        .onKeyPress("q") { queueSong() }
-        .onKeyPress("Q") { queueSong() }
+        .onKeyPress(" ") { Task { @MainActor in playSong() } }
+        .onKeyPress("q") { Task { @MainActor in queueSong() } }
+        .onKeyPress("Q") { Task { @MainActor in queueSong() } }
         .onKeyPress("\u{1B}") { navigationState.pop() }
     }
 
@@ -214,18 +214,25 @@ struct TUIGlobalSearchView: View {
         navigationState.push(.artistDetail(artist: song.artist))
     }
 
+    @MainActor
     private func playSong() {
         guard selectedIndex < results.count else { return }
         let song = results[selectedIndex]
-        // TODO: Implement player integration
-        errorMessage = "Play functionality coming soon for: \(song.title)"
+
+        // Configure queue with search results, starting from selected
+        let playerVM = dependencies.playerViewModel
+        playerVM.configureQueue(songs: results, startIndex: selectedIndex)
+        playerVM.playSong(song)
     }
 
+    @MainActor
     private func queueSong() {
         guard selectedIndex < results.count else { return }
         let song = results[selectedIndex]
-        // TODO: Implement queue integration
-        errorMessage = "Queue functionality coming soon for: \(song.title)"
+
+        // Add song to the end of current queue
+        let playerVM = dependencies.playerViewModel
+        playerVM.addToQueue(song)
     }
 
     // MARK: - Navigation Helpers

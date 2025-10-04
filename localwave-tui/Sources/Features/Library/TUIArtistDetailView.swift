@@ -79,9 +79,9 @@ struct TUIArtistDetailView: View {
         .onKeyPress("u") { pageUp() }
         .onKeyPress("d") { pageDown() }
         // Actions
-        .onKeyPress(" ") { playSong() }
-        .onKeyPress("q") { queueSong() }
-        .onKeyPress("Q") { queueSong() }
+        .onKeyPress(" ") { Task { @MainActor in playSong() } }
+        .onKeyPress("q") { Task { @MainActor in queueSong() } }
+        .onKeyPress("Q") { Task { @MainActor in queueSong() } }
         .onKeyPress("p") { addToPlaylist() }
         .onKeyPress("P") { addToPlaylist() }
         .onKeyPress("h") { navigationState.pop() }
@@ -218,19 +218,25 @@ struct TUIArtistDetailView: View {
         isLoading = false
     }
 
+    @MainActor
     private func playSong() {
         guard selectedIndex < songs.count else { return }
         let song = songs[selectedIndex]
-        // TODO: Implement player integration
-        // For now, just a placeholder
-        errorMessage = "Play functionality coming soon for: \(song.title)"
+
+        // Configure queue with all artist songs, starting from selected
+        let playerVM = dependencies.playerViewModel
+        playerVM.configureQueue(songs: songs, startIndex: selectedIndex)
+        playerVM.playSong(song)
     }
 
+    @MainActor
     private func queueSong() {
         guard selectedIndex < songs.count else { return }
         let song = songs[selectedIndex]
-        // TODO: Implement queue integration
-        errorMessage = "Queue functionality coming soon for: \(song.title)"
+
+        // Add song to the end of current queue
+        let playerVM = dependencies.playerViewModel
+        playerVM.addToQueue(song)
     }
 
     private func addToPlaylist() {
