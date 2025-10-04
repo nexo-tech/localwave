@@ -18,6 +18,7 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
     private var pausedTime: TimeInterval = 0
     private var cachedDuration: TimeInterval = 0
     private var currentURL: URL?
+    private var isIntentionalStop: Bool = false
     private let logger = Logger(subsystem: subsystem, category: "CLIAudioPlayerAdapter")
 
     public weak var delegate: AudioPlayerDelegate?
@@ -95,8 +96,10 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
             return
         }
 
-        // Stop any existing playback
+        // Stop any existing playback (intentionally)
+        isIntentionalStop = true
         stop()
+        isIntentionalStop = false
 
         logger.debug("Starting playback with afplay")
 
@@ -111,12 +114,17 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
                 self.isPlaying = false
                 self.stopPlaybackTimer()
 
-                if process.terminationStatus == 0 {
-                    self.logger.debug("Playback finished successfully")
-                    self.delegate?.audioPlayerDidFinishPlaying(self, successfully: true)
+                // Only notify delegate if this wasn't an intentional stop
+                if !self.isIntentionalStop {
+                    if process.terminationStatus == 0 {
+                        self.logger.debug("Playback finished successfully")
+                        self.delegate?.audioPlayerDidFinishPlaying(self, successfully: true)
+                    } else {
+                        self.logger.warning("Playback terminated with status: \(process.terminationStatus)")
+                        self.delegate?.audioPlayerDidFinishPlaying(self, successfully: false)
+                    }
                 } else {
-                    self.logger.warning("Playback terminated with status: \(process.terminationStatus)")
-                    self.delegate?.audioPlayerDidFinishPlaying(self, successfully: false)
+                    self.logger.debug("Playback stopped intentionally, not notifying delegate")
                 }
             }
         }
@@ -140,12 +148,14 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
         }
 
         // afplay doesn't support pause, so we terminate and track position
+        isIntentionalStop = true
         let currentPausedTime = currentTime
         pausedTime = currentPausedTime
         process.terminate()
         isPlaying = false
         stopPlaybackTimer()
         self.process = nil
+        isIntentionalStop = false
 
         logger.debug("Playback paused at \(currentPausedTime)s")
     }
@@ -153,12 +163,14 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
     public func stop() {
         guard let process = process else { return }
 
+        isIntentionalStop = true
         process.terminate()
         isPlaying = false
         pausedTime = 0
         startTime = nil
         stopPlaybackTimer()
         self.process = nil
+        isIntentionalStop = false
 
         logger.debug("Playback stopped")
     }
@@ -172,13 +184,8 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
         ) { [weak self] _ in
             Task { @MainActor in
                 guard let self = self else { return }
-                // Check if we've reached the end
-                let currentTime = self.currentTime
-                let duration = self.duration
-                if currentTime >= duration - 0.1 {
-                    self.stop()
-                    self.delegate?.audioPlayerDidFinishPlaying(self, successfully: true)
-                }
+                // Timer is just for updating UI, not for detecting end of playback
+                // End of playback is detected via afplay process termination
             }
         }
         RunLoop.main.add(playbackTimer!, forMode: .common)
