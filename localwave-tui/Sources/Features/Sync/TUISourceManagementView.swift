@@ -454,6 +454,35 @@ struct TUISourceManagementView: View {
             }
 
             let url = URL(fileURLWithPath: cleanPath)
+
+            // Create a security-scoped bookmark for the TUI
+            // On macOS, TUI has direct file access but the sync service expects bookmarks
+            let bookmarkKey = makeBookmarkKey(url)
+            if UserDefaults.standard.data(forKey: bookmarkKey) == nil {
+                do {
+                    // Create a file-reference bookmark (works for command-line apps)
+                    let bookmarkData = try url.bookmarkData(
+                        options: [.withSecurityScope, .securityScopeAllowOnlyReadAccess],
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    )
+                    UserDefaults.standard.set(bookmarkData, forKey: bookmarkKey)
+                } catch {
+                    // Fallback: create without security scope (for non-sandboxed apps)
+                    if let bookmarkData = try? url.bookmarkData(
+                        options: [],
+                        includingResourceValuesForKeys: nil,
+                        relativeTo: nil
+                    ) {
+                        UserDefaults.standard.set(bookmarkData, forKey: bookmarkKey)
+                    } else {
+                        errorMessage = "Failed to create bookmark: \(error.localizedDescription)"
+                        isLoading = false
+                        return
+                    }
+                }
+            }
+
             let syncService = dependencies.sourceService.syncService()
             let syncedSource = try await syncService.syncDir(
                 sourceId: sourceId,
