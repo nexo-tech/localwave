@@ -70,9 +70,12 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         }
     }
 
-    @Published var volume: Float = 0.5 { // default volume now 0.5
+    @Published var volume: Float = 1.0 {
         didSet {
-            player?.volume = volume
+            // Apply logarithmic curve for better human perception
+            // Using square function (x²) as recommended for iOS
+            let actualVolume = volume * volume
+            player?.volume = actualVolume
             Task {
                 await playerPersistenceService?.savePlaybackState(
                     volume: volume, currentIndex: currentIndex, songs: songs
@@ -97,6 +100,13 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         setupInterruptionObserver()
 
         Task {
+            // Restore volume first (nil means use default 1.0)
+            if let storedVolume = await self.playerPersistenceService?.getVolume() {
+                self.volume = storedVolume
+            }
+            // If getVolume returns nil, volume stays at its initial value of 1.0
+            
+            // Then restore queue and current song
             if let (songs, currentIndex, currentSong) = await self.playerPersistenceService?
                 .restore()
             {
@@ -106,11 +116,9 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
 
                 if let currentSong = currentSong {
                     stopAndPreloadSong(currentSong)
+                    // Update UI to show restored song info
+                    updateNowPlayingInfo()
                 }
-            }
-
-            if let stored = await self.playerPersistenceService?.getVolume() {
-                self.volume = stored - 0.5
             }
         }
     }
@@ -273,7 +281,8 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
         do {
             let audioPlayer = try AVAudioPlayer(contentsOf: url)
             player = audioPlayer
-            player?.volume = volume
+            // Apply logarithmic curve when setting volume
+            player?.volume = volume * volume
             currentSong = song
             player?.delegate = self
             updateTimeDisplay()

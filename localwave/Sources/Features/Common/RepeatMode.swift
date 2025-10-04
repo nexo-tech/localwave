@@ -5,7 +5,7 @@
 //  Created by vic on 2025-09-12.
 //
 import Foundation
-import SwiftUICore
+import SwiftUI
 
 enum RepeatMode: Int, CaseIterable {
     case none, all, one

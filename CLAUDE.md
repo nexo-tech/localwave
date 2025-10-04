@@ -4,102 +4,81 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LocalWave is an offline-first iOS music player built with SwiftUI that allows users to manage personal MP3 libraries without relying on Apple Music or iTunes Match. The app uses a layered MVVM architecture with Swift Actors for concurrency-safe operations and SQLite with FTS5 for fast full-text search capabilities.
+LocalWave is an offline-first iOS music player built with SwiftUI that enables users to manage their personal MP3 libraries without relying on Apple Music or iTunes Match. The app uses SQLite with FTS5 for full-text search and follows a clean MVVM + Actor-based architecture.
 
-## Build & Development Commands
+## Development Commands
 
 ### Building and Running
-```bash
-# Open project in Xcode
-open localwave.xcodeproj
+- **Build and run**: Open `localwave.xcodeproj` in Xcode and press ⌘R
+- **Run tests**: Use Xcode's test navigator or ⌘U to run the test plan (`localwave.xctestplan`)
+- **Test targets**: `musicappTests` (unit tests) and `musicappUITests` (UI tests)
 
-# Build and run the project
-# Use Xcode's build (⌘R) or build action (⌘B)
-```
+### Xcode Project Structure
+- Main target: `localwave` (builds `localwave.app`)
+- Test scheme: `musicapp.xcscheme` 
+- Uses Swift Testing framework (not XCTest)
 
-### Testing
-```bash
-# Run tests via Xcode Test Navigator or:
-# Use Xcode's test action (⌘U)
-# Test plan configuration is in localwave.xctestplan
-```
+## Architecture
 
-The project has two test targets:
-- `musicappTests` - Unit tests (parallelizable: false)  
-- `musicappUITests` - UI tests (parallelizable: true)
+The codebase follows a layered MVVM architecture with backend-style separation:
 
-## Architecture Overview
-
-LocalWave follows a clean layered architecture with clear separation of concerns:
-
-### Layer Structure
-- **App Layer** (`Sources/App/`): Dependency injection and app initialization
-- **Features Layer** (`Sources/Features/`): SwiftUI views and view models organized by feature
-- **Domain Layer** (`Sources/Domain/`): Core models and protocol definitions
-- **Data Layer** (`Sources/Data/`): Repositories, services, and data providers
+### Core Layers
+- **Domain**: Models (`Models.swift`) and protocols (`Protocols.swift`) - pure Swift types
+- **Data**: SQLite repositories and services for data access
+- **Features**: UI organized by feature with ViewModels and Views
+- **App**: Dependency injection container and app entry point
 
 ### Key Architectural Patterns
+- **Swift Actors**: Used for state-safe business logic (marked with `@MainActor` for UI components)
+- **Repository Pattern**: All data access goes through protocol-based repositories
+- **Dependency Injection**: Centralized in `DependencyContainer.swift`
+- **SQLite with FTS5**: Raw SQL queries via SQLite.swift, no CoreData
 
-**Dependency Injection**: `DependencyContainer` manages all service dependencies and provides factory methods for view models. Services are injected through initializers following explicit dependency patterns.
+### Directory Structure
+```
+localwave/Sources/
+├── App/                    # DependencyContainer, MusicApp entry point
+├── Core/                   # Utils.swift - shared utilities and constants
+├── Domain/                 # Models.swift, Protocols.swift
+├── Data/
+│   ├── Repositories/       # SQLite*Repository classes
+│   ├── Services/           # Default*Service implementations  
+│   └── Providers/          # DefaultICloudProvider
+└── Features/
+    ├── Common/             # Shared UI components (ThemeProvider, ErrorView)
+    ├── Library/            # Artist/Album/Song views and ViewModels
+    ├── Player/             # Audio playback UI and logic
+    ├── Playlists/          # Playlist management
+    ├── Shared/             # Tab system (CustomTabView, MainTabView)
+    └── Sync/               # iCloud sync and source browsing
+```
 
-**Repository Pattern**: All data access goes through repository protocols (`SongRepository`, `PlaylistRepository`, etc.) with SQLite implementations. Repositories handle async operations and use raw SQL for performance.
-
-**Swift Actors**: Business logic actors ensure thread-safe operations for concurrent tasks like file import, search indexing, and background sync.
-
-**MVVM with Combine**: View models use `@Published` properties and async/await patterns. Views bind to view model state through SwiftUI's observation system.
-
-### SQLite Database Architecture
-
-The app uses SQLite with FTS5 (Full-Text Search) tables for fast searching:
-
-- **Primary Tables**: Users, Sources, Songs, Playlists, etc.
-- **FTS Tables**: 
-  - `songs_fts` - Indexes artist, title, album, albumArtist
-  - `source_paths_fts` - Indexes fullPath, fileName
-- **Search**: Uses BM25 ranking with async upserts and transaction handling
-
-### File Management System
-
-**Security-Scoped Bookmarks**: Uses persistent file access via security-scoped bookmarks stored in SQLite for accessing user's iCloud files.
-
-**Background Services**: `BackgroundFileService` handles file copying and bookmark verification using Task-based concurrency.
-
-**Import Pipeline**: Multi-stage import process from source discovery → path indexing → metadata extraction → library integration.
-
-## Key Services and Components
-
-### Core Services
-- `DefaultSongImportService`: Handles MP3 metadata parsing and library integration
-- `DefaultSourceSyncService`: Manages folder scanning and file discovery
-- `DefaultPlayerPersistenceService`: Handles playback state restoration
-- `BackgroundFileService`: Manages file copying and bookmark validation
-
-### View Model Factories
-The `DependencyContainer` provides factory methods for creating view models with proper dependency injection:
-- `makeSongListViewModel(filter:)` - For filtered song lists
-- `makeArtistListViewModel()` - For artist browsing
-- `makeAlbumListViewModel()` - For album browsing  
-- `makePlaylistListViewModel()` - For playlist management
-
-### Feature Organization
-- **Library**: Artist/Album/Song browsing with metadata editing
-- **Player**: Audio playback with mini and full player UIs
-- **Playlists**: Custom playlist creation and management
-- **Sync**: iCloud folder import and source management
-- **Shared**: Reusable UI components and navigation
-
-## Development Guidelines
+## Key Technical Details
 
 ### Database Schema
-Current schema version is defined by `schemaVersion` constant. Database file: `musicApp{schemaVersion}.sqlite`
+- **Schema version**: Tracked in `Utils.swift` as `schemaVersion = 29`
+- **FTS5 tables**: `songs_fts` (artist/title/album search) and `source_paths_fts` (file path search)
+- **Core entities**: User, Source, SourcePath, Song, Playlist, PlaylistSong
 
-### Concurrency Patterns
-- Use Swift Actors for shared state management
-- Repository methods are async and handle SQLite operations safely
-- Background tasks use `Task(priority: .utility)` for non-critical operations
+### Important Constants
+- **Subsystem**: `"com.snowbear.localwave"` for logging
+- **Database**: `"musicApp{schemaVersion}.sqlite"`
 
-### Search Implementation
-All search functionality uses FTS5 tables with BM25 ranking. Search queries are processed through dedicated search repositories that handle tokenization and ranking.
+### Testing
+- Uses Swift Testing framework (import Testing)
+- Test structure: `@Test func testName() async throws`
+- Example tests in `Tests.swift` cover FileHelper utilities
 
-### File Access Security
-Always use security-scoped bookmarks for file access. The app handles bookmark expiration gracefully with fallback file copying mechanisms.
+### Dependencies
+- **SQLite.swift**: Database access layer
+- **AVFoundation**: Audio playback
+- **CryptoKit**: For hashing and security
+- **SwiftUI/Combine**: UI framework
+
+## Development Notes
+
+- All ViewModels are marked `@MainActor` for thread safety
+- Repository protocols define async interfaces for data operations
+- Services layer implements business logic between repositories and ViewModels
+- Full-text search uses BM25 ranking with SQLite FTS5
+- File access uses security-scoped bookmarks for persistent iCloud access
