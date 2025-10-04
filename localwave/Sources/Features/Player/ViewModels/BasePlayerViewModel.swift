@@ -117,11 +117,63 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
         }
     }
 
+    public func removeFromQueue(at index: Int) {
+        guard index >= 0 && index < songs.count else { return }
+
+        // Don't allow removing the currently playing song
+        guard index != currentIndex else { return }
+
+        songs.remove(at: index)
+
+        // Update current index if needed
+        if index < currentIndex {
+            currentIndex -= 1
+        }
+
+        Task {
+            await playerPersistenceService?.savePlaybackState(
+                volume: volume, currentIndex: currentIndex, songs: songs
+            )
+        }
+    }
+
+    public func clearQueue() {
+        stop()
+        songs.removeAll()
+        currentIndex = 0
+        currentSong = nil
+        Task {
+            await playerPersistenceService?.savePlaybackState(
+                volume: volume, currentIndex: currentIndex, songs: songs
+            )
+        }
+    }
+
     public func reorderQueue(from source: IndexSet, to destination: Int) {
         songs.move(fromOffsets: source, toOffset: destination)
         if let currentSong = currentSong {
             currentIndex = songs.firstIndex { $0.id == currentSong.id } ?? 0
         }
+        Task {
+            await playerPersistenceService?.savePlaybackState(
+                volume: volume, currentIndex: currentIndex, songs: songs
+            )
+        }
+    }
+
+    public func moveSong(from sourceIndex: Int, to destinationIndex: Int) {
+        guard sourceIndex >= 0 && sourceIndex < songs.count else { return }
+        guard destinationIndex >= 0 && destinationIndex < songs.count else { return }
+        guard sourceIndex != destinationIndex else { return }
+
+        let song = songs.remove(at: sourceIndex)
+        songs.insert(song, at: destinationIndex)
+
+        // Update current index to track the currently playing song
+        if let currentSong = currentSong {
+            currentIndex = songs.firstIndex { $0.id == currentSong.id } ?? 0
+        }
+
         Task {
             await playerPersistenceService?.savePlaybackState(
                 volume: volume, currentIndex: currentIndex, songs: songs
@@ -228,6 +280,12 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
         updateTimeDisplay()
     }
 
+    public func seekBySeconds(_ seconds: Double) {
+        let newTime = max(0, min(player.currentTime + seconds, player.duration))
+        player.currentTime = newTime
+        updateTimeDisplay()
+    }
+
     // MARK: - Shuffle & Repeat
 
     public func setShuffle(_ enabled: Bool) {
@@ -263,6 +321,16 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
 
     public func setRepeat(_ enabled: RepeatMode) {
         repeatMode = enabled
+    }
+
+    public func toggleShuffle() {
+        setShuffle(!isShuffleEnabled)
+    }
+
+    public func toggleRepeat() {
+        var mode = repeatMode
+        mode.toggle()
+        setRepeat(mode)
     }
 
     // MARK: - Playlist Creation

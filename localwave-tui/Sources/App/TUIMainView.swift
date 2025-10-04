@@ -81,6 +81,8 @@ struct TUIMainView: View {
             TUIAlbumDetailView(dependencies: dependencies, albumName: album, artist: artist, navigationState: navigationState)
         case .globalSearch:
             TUIGlobalSearchView(dependencies: dependencies, navigationState: navigationState)
+        case .queue:
+            TUIQueueView(playerViewModel: dependencies.playerViewModel, navigationState: navigationState)
         default:
             Text("Route not implemented yet")
         }
@@ -100,7 +102,11 @@ struct TUIMainView: View {
         case .playlists:
             PlaylistsPlaceholder()
         case .player:
-            TUIPlayerView(playerViewModel: dependencies.playerViewModel)
+            TUIPlayerView(
+                playerViewModel: dependencies.playerViewModel,
+                dependencies: dependencies,
+                navigationState: navigationState
+            )
         }
     }
 

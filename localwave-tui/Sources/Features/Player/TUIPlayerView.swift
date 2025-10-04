@@ -24,6 +24,8 @@ import LocalWavePlayer
 @MainActor
 struct TUIPlayerView: View {
     @ObservedObject var playerViewModel: BasePlayerViewModel
+    let dependencies: TUIDependencyContainer
+    @Binding var navigationState: NavigationState
 
     var body: some View {
         VStack(spacing: 1) {
@@ -53,6 +55,9 @@ struct TUIPlayerView: View {
         .onKeyPress("S") { toggleShuffle() }
         .onKeyPress("r") { toggleRepeat() }
         .onKeyPress("R") { toggleRepeat() }
+        // Queue view
+        .onKeyPress("q") { openQueue() }
+        .onKeyPress("Q") { openQueue() }
     }
 
     // MARK: - View Components
@@ -222,6 +227,8 @@ struct TUIPlayerView: View {
                 Text("[P/N] Prev/Next")
                 Text("  ")
                 Text("[[ / ]] Seek")
+                Text("  ")
+                Text("[Q] Queue")
                 Spacer()
             }
             HStack {
@@ -248,14 +255,12 @@ struct TUIPlayerView: View {
 
     @MainActor
     private func seekBackward() {
-        // TODO: Implement seek -10s when BasePlayerViewModel adds seek method
-        // For now this is a placeholder
+        playerViewModel.seekBySeconds(-10.0)
     }
 
     @MainActor
     private func seekForward() {
-        // TODO: Implement seek +10s when BasePlayerViewModel adds seek method
-        // For now this is a placeholder
+        playerViewModel.seekBySeconds(10.0)
     }
 
     @MainActor
@@ -270,13 +275,16 @@ struct TUIPlayerView: View {
 
     @MainActor
     private func toggleShuffle() {
-        // TODO: Implement when BasePlayerViewModel adds toggleShuffle method
-        // For now this is a placeholder
+        playerViewModel.toggleShuffle()
     }
 
     @MainActor
     private func toggleRepeat() {
-        // TODO: Implement when BasePlayerViewModel adds toggleRepeat method
-        // For now this is a placeholder
+        playerViewModel.toggleRepeat()
+    }
+
+    @MainActor
+    private func openQueue() {
+        navigationState.push(.queue)
     }
 }
