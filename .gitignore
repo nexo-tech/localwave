@@ -40,3 +40,5 @@ yarn-error.*
 expo-env.d.ts
 # @end expo-cli
 buildServer.json
+.build/
+Package.resolved
