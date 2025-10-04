@@ -415,10 +415,26 @@ struct TUISourceManagementView: View {
             let userId: Int64 = 1  // TODO: Get from user cloud service
 
             // Add the source using registerSourcePath
-            _ = try await dependencies.sourceService.registerSourcePath(
+            let newSource = try await dependencies.sourceService.registerSourcePath(
                 userId: userId,
                 path: trimmedPath,
                 type: .iCloud
+            )
+
+            // Sync the directory structure to populate SourcePaths
+            guard let sourceId = newSource.id else {
+                errorMessage = "Source created but has no ID"
+                isLoading = false
+                return
+            }
+
+            let url = URL(fileURLWithPath: trimmedPath)
+            let syncService = dependencies.sourceService.syncService()
+            _ = try await syncService.syncDir(
+                sourceId: sourceId,
+                folderURL: url,
+                onCurrentURL: nil,
+                onSetLoading: nil
             )
 
             // Reload sources
