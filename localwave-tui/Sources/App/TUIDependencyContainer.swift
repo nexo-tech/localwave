@@ -11,6 +11,7 @@ import SQLite
 import LocalWaveDomain
 import LocalWaveCore
 import LocalWaveData
+import LocalWavePlayer
 
 /// TUI-specific dependency injection container.
 /// Reuses all Data layer repositories and services from the iOS app,
@@ -29,6 +30,7 @@ class TUIDependencyContainer {
     let playerPersistenceService: PlayerPersistenceService
     let playlistRepo: PlaylistRepository
     let playlistSongRepo: PlaylistSongRepository
+    let playerViewModel: BasePlayerViewModel
 
     private var backgroundFileService: BackgroundFileService?
 
@@ -89,6 +91,16 @@ class TUIDependencyContainer {
         playlistRepo = try SQLitePlaylistRepository(db: db)
         playlistSongRepo = try SQLitePlaylistSongRepository(db: db)
         backgroundFileService = BackgroundFileService(songRepo: songRepo)
+
+        // Initialize player view model with mock audio player
+        let audioPlayer = TUIMockAudioPlayer()
+        playerViewModel = BasePlayerViewModel(
+            player: audioPlayer,
+            playerPersistenceService: playerPersistenceService,
+            songRepo: songRepo,
+            playlistRepo: playlistRepo,
+            playlistSongRepo: playlistSongRepo
+        )
 
         logger.info("TUI DependencyContainer initialized successfully")
     }

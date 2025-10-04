@@ -39,9 +39,9 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
 
     // MARK: - Internal State
 
-    internal var isShuffleEnabled: Bool = false
+    public var isShuffleEnabled: Bool = false
     internal var originalQueue: [Song] = []
-    internal var repeatMode: RepeatMode = .none
+    public var repeatMode: RepeatMode = .none
 
     public var queue: [Song] {
         return songs
@@ -155,13 +155,13 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
         }
     }
 
-    internal func play() {
+    public func play() {
         player.play()
         isPlaying = true
         startTimer()
     }
 
-    internal func pause() {
+    public func pause() {
         player.pause()
         isPlaying = false
         stopTimer()

@@ -15,10 +15,16 @@ struct TUIMainView: View {
     @State var navigationState = NavigationState()
 
     var body: some View {
-        TUITabView(tabState: $tabState) { selectedTab in
-            NavigationContainer(navigationState: $navigationState) { navState in
-                contentView(for: selectedTab, navigationState: navState)
+        VStack(spacing: 0) {
+            // Main content area with tabs and navigation
+            TUITabView(tabState: $tabState) { selectedTab in
+                NavigationContainer(navigationState: $navigationState) { navState in
+                    contentView(for: selectedTab, navigationState: navState)
+                }
             }
+
+            // Mini player always visible at bottom
+            TUIMiniPlayerView(playerViewModel: dependencies.playerViewModel)
         }
         // Tab switching with number keys (1-6)
         .onKeyPress("1") { tabState.selectTab(.sync) }
@@ -94,7 +100,7 @@ struct TUIMainView: View {
         case .playlists:
             PlaylistsPlaceholder()
         case .player:
-            PlayerPlaceholder()
+            TUIPlayerView(playerViewModel: dependencies.playerViewModel)
         }
     }
 
