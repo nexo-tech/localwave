@@ -59,8 +59,14 @@ struct TUIMainView: View {
                 parentPathId: parentPathId,
                 navigationState: navigationState
             )
-        case .sourceScan:
-            Text("Scan view - Coming soon")
+        case .sourceScan(let sourceId, let pathId, let path):
+            TUISourceScanView(
+                dependencies: dependencies,
+                sourceId: sourceId,
+                pathId: pathId,
+                path: path,
+                navigationState: navigationState
+            )
         default:
             Text("Route not implemented yet")
         }

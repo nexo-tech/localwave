@@ -23,6 +23,7 @@ class TUIDependencyContainer {
     let userCloudService: UserCloudService
     let icloudProvider: ICloudProvider
     let sourceService: SourceService
+    let sourcePathRepository: SourcePathRepository
     let songRepository: SongRepository
     let songImportService: SongImportService
     let playerPersistenceService: PlayerPersistenceService
@@ -76,6 +77,7 @@ class TUIDependencyContainer {
             sourceImportService: sourceImportService
         )
 
+        sourcePathRepository = sourcePathRepo
         songRepository = songRepo
         songImportService = DefaultSongImportService(
             songRepo: songRepo,
