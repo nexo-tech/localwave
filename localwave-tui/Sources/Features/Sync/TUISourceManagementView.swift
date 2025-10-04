@@ -115,6 +115,27 @@ struct TUISourceManagementView: View {
             }
         }
         .onKeyPress("\u{1B}") { handleEscape() }  // Escape
+        // Delete confirmation handlers
+        .onKeyPress("y") {
+            if showDeleteConfirmation {
+                Task { await deleteConfirmed() }
+            }
+        }
+        .onKeyPress("Y") {
+            if showDeleteConfirmation {
+                Task { await deleteConfirmed() }
+            }
+        }
+        .onKeyPress("n") {
+            if showDeleteConfirmation {
+                cancelDelete()
+            }
+        }
+        .onKeyPress("N") {
+            if showDeleteConfirmation {
+                cancelDelete()
+            }
+        }
     }
 
     // MARK: - View Components
@@ -274,10 +295,6 @@ struct TUISourceManagementView: View {
 
             Spacer()
         }
-        .onKeyPress("y") { Task { await deleteConfirmed() } }
-        .onKeyPress("Y") { Task { await deleteConfirmed() } }
-        .onKeyPress("n") { cancelDelete() }
-        .onKeyPress("N") { cancelDelete() }
     }
 
     private var helpBar: some View {
