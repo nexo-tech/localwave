@@ -139,9 +139,10 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
             process = task
             currentPlayingProcess = task  // Mark this as the process that should trigger delegate
             isPlaying = true
+            pausedTime = 0  // Reset paused time for fresh playback
             startTime = Date()
             startPlaybackTimer()
-            logger.debug("Playback started")
+            logger.debug("Playback started, startTime: \(self.startTime!)")
         } catch {
             logger.error("Failed to start afplay: \(error)")
         }
