@@ -121,12 +121,16 @@ struct TUISourceScanView: View {
 
             // Current file
             HStack {
-                Text("Processing (\(processedFiles)/\(totalFiles)):")
+                if totalFiles > 0 {
+                    Text("Processing (\(processedFiles)/\(totalFiles)):")
+                } else {
+                    Text("Processing:")
+                }
                 Spacer()
             }
             HStack {
                 Text("  ")
-                Text(currentFile.isEmpty ? "(gathering files...)" : TUITheme.truncate(currentFile, width: 60))
+                Text(currentFile.isEmpty ? "(initializing...)" : TUITheme.truncate(currentFile, width: 60))
                 Spacer()
             }
             Text("")
@@ -287,9 +291,9 @@ struct TUISourceScanView: View {
                 return
             }
 
-            // Get all child paths to count total files
-            let allPaths = try await gatherAllPaths(sourcePathRepo: sourcePathRepo, startPath: sourcePath)
-            totalFiles = allPaths.count
+            // Note: We skip counting total files to avoid hanging on large directories
+            // Progress will be based on percentage from import service
+            totalFiles = 0  // Unknown until scan progresses
 
             // Get song import service
             let songImportService = dependencies.songImportService
@@ -348,9 +352,9 @@ struct TUISourceScanView: View {
     }
 
     private func cancelScanning() {
-        guard isScanning else { return }
-
         isCancelled = true
+        isScanning = false
+
         // Cancel the import task
         Task {
             await dependencies.songImportService.cancelImport()
