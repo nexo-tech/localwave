@@ -15,8 +15,8 @@
 - [x] 2.4 Build TUI theme and styling system
 
 ### Phase 3: Library Features - Artists/Albums/Songs
-- [ ] 3.1 Build artist list TUI view
-- [ ] 3.2 Build artist detail view (songs by artist)
+- [x] 3.1 Build artist list TUI view
+- [x] 3.2 Build artist detail view (songs by artist)
 - [ ] 3.3 Build album grid TUI view
 - [ ] 3.4 Build album detail view (album songs)
 - [ ] 3.5 Build all songs list TUI view
