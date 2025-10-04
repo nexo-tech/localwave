@@ -24,12 +24,12 @@
 - [x] 3.7 Implement song metadata editor
 
 ### Phase 4: Player Features
-- [ ] 4.1 Create mini player status bar
-- [ ] 4.2 Create full player view (Now Playing)
-- [ ] 4.3 Implement playback controls
-- [ ] 4.4 Build queue management
-- [ ] 4.5 Add progress bar and time display
-- [ ] 4.6 Implement shuffle/repeat modes
+- [x] 4.1 Create mini player status bar
+- [x] 4.2 Create full player view (Now Playing)
+- [ ] 4.3 Implement playback controls (seek, actual audio playback)
+- [ ] 4.4 Build queue management (add/remove/reorder)
+- [x] 4.5 Add progress bar and time display
+- [x] 4.6 Implement shuffle/repeat modes (UI complete, needs backend)
 
 ### Phase 5: Playlist Management
 - [ ] 5.1 Build playlist list view
@@ -464,35 +464,58 @@ LocalWave > Songs
 
 ## Phase 4: Player Features
 
-### Task 4.1: Create Mini Player Status Bar
-**Files to create:**
-- `localwave-tui/Sources/Features/Player/TUIMiniPlayerView.swift` (150 lines)
+### Task 4.1: Create Mini Player Status Bar ✅
+**Status**: Complete
 
-**Description:**
-- Always visible at bottom (2 lines)
-- Line 1: Now playing info
-- Line 2: Progress bar and time
-- Reuse BasePlayerViewModel
-- Update in real-time
+**Files created:**
+- `localwave-tui/Sources/Features/Player/TUIMiniPlayerView.swift` (70 lines)
+- `localwave-tui/Sources/Core/TUIMockAudioPlayer.swift` (43 lines)
 
-**UI mockup:**
+**Implementation:**
+- Always visible 2-line status bar at bottom of screen
+- Line 1: Play/pause icon, artist - title, shuffle icon, repeat symbol
+- Line 2: Progress bar with current time / duration
+- Uses @ObservedObject BasePlayerViewModel for real-time updates
+- @MainActor isolated for safe access to player state
+- TUIMockAudioPlayer implements AudioPlayerProtocol for testing
+
+**Integration:**
+- Added to TUIMainView bottom via VStack wrapper
+- Visible across all tabs and navigation states
+- BasePlayerViewModel initialized in TUIDependencyContainer
+
+**UI implemented:**
 ```
 ────────────────────────────────────────────────────────
-▶ The Beatles - Come Together                    🔀 🔁
+▶ The Beatles - Come Together                    🔀 ↻
 [████████──────────────] 2:30 / 4:20
 ```
 
 ---
 
-### Task 4.2: Create Full Player View
-**Files to create:**
-- `localwave-tui/Sources/Features/Player/TUIPlayerView.swift` (250 lines)
+### Task 4.2: Create Full Player View ✅
+**Status**: Complete
 
-**Description:**
-- Dedicated player view (Tab 5)
-- Large display of current song info
-- Interactive playback controls
-- Volume control
+**Files created:**
+- `localwave-tui/Sources/Features/Player/TUIPlayerView.swift` (282 lines)
+
+**Implementation:**
+- Dedicated player view accessible via Tab 6
+- Large song info display (title, artist, album, year)
+- Playback controls: ◀◀ ⏸/▶ ▶▶
+- Volume control with visual progress bar (0-100%)
+- Shuffle toggle and Repeat mode display
+- Queue preview showing next 3 songs
+- Keyboard controls: Space (play/pause), P/N (prev/next), [/] (seek), +/- (volume), S (shuffle), R (repeat)
+- All action methods @MainActor for safe player interaction
+- View components extract @Published properties to avoid actor isolation errors
+
+**Integration:**
+- Replaced PlayerPlaceholder in TUIMainView Tab 6
+- Shares BasePlayerViewModel with mini player for consistent state
+
+**Modified shared code:**
+- BasePlayerViewModel: Made isShuffleEnabled, repeatMode, play(), pause() public for TUI access
 - Queue preview (next 3 songs)
 
 **UI mockup:**
