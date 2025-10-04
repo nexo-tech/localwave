@@ -58,7 +58,7 @@ struct TUIMainView: View {
             TUISourceBrowseView(
                 dependencies: dependencies,
                 sourceId: sourceId,
-                parentPathId: parentPathId,
+                initialParentPathId: parentPathId,
                 navigationState: navigationState
             )
         case .sourceScan(let sourceId, let pathId, let path):
