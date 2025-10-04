@@ -18,7 +18,7 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
     private var pausedTime: TimeInterval = 0
     private var cachedDuration: TimeInterval = 0
     private var currentURL: URL?
-    private var isIntentionalStop: Bool = false
+    private var currentPlayingProcess: Process?  // Track which process should trigger delegate
     private let logger = Logger(subsystem: subsystem, category: "CLIAudioPlayerAdapter")
 
     public weak var delegate: AudioPlayerDelegate?
@@ -96,10 +96,11 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
             return
         }
 
-        // Stop any existing playback (intentionally)
-        isIntentionalStop = true
-        stop()
-        isIntentionalStop = false
+        // Stop any existing playback
+        if let existingProcess = process, existingProcess.isRunning {
+            existingProcess.terminate()
+            // Don't wait for termination - continue immediately
+        }
 
         logger.debug("Starting playback with afplay")
 
@@ -108,14 +109,17 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
         task.arguments = [url.path]
 
         // Set up termination handler
-        task.terminationHandler = { [weak self] process in
+        task.terminationHandler = { [weak self, weak task] process in
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
+
+                // Only notify delegate if this process is still the "current" one
+                let isCurrentProcess = self.currentPlayingProcess === task
+
                 self.isPlaying = false
                 self.stopPlaybackTimer()
 
-                // Only notify delegate if this wasn't an intentional stop
-                if !self.isIntentionalStop {
+                if isCurrentProcess {
                     if process.terminationStatus == 0 {
                         self.logger.debug("Playback finished successfully")
                         self.delegate?.audioPlayerDidFinishPlaying(self, successfully: true)
@@ -123,8 +127,9 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
                         self.logger.warning("Playback terminated with status: \(process.terminationStatus)")
                         self.delegate?.audioPlayerDidFinishPlaying(self, successfully: false)
                     }
+                    self.currentPlayingProcess = nil
                 } else {
-                    self.logger.debug("Playback stopped intentionally, not notifying delegate")
+                    self.logger.debug("Old process terminated, ignoring")
                 }
             }
         }
@@ -132,6 +137,7 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
         do {
             try task.run()
             process = task
+            currentPlayingProcess = task  // Mark this as the process that should trigger delegate
             isPlaying = true
             startTime = Date()
             startPlaybackTimer()
@@ -148,14 +154,13 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
         }
 
         // afplay doesn't support pause, so we terminate and track position
-        isIntentionalStop = true
         let currentPausedTime = currentTime
         pausedTime = currentPausedTime
+        currentPlayingProcess = nil  // Clear so termination handler won't trigger delegate
         process.terminate()
         isPlaying = false
         stopPlaybackTimer()
         self.process = nil
-        isIntentionalStop = false
 
         logger.debug("Playback paused at \(currentPausedTime)s")
     }
@@ -163,14 +168,13 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
     public func stop() {
         guard let process = process else { return }
 
-        isIntentionalStop = true
+        currentPlayingProcess = nil  // Clear so termination handler won't trigger delegate
         process.terminate()
         isPlaying = false
         pausedTime = 0
         startTime = nil
         stopPlaybackTimer()
         self.process = nil
-        isIntentionalStop = false
 
         logger.debug("Playback stopped")
     }
