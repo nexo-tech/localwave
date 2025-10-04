@@ -95,10 +95,11 @@ struct TUISourceBrowseView: View {
             helpBar
         }
         .onAppear {
-            // Initialize path stack
+            // Initialize path stack with source's pathId as root
             if pathStack.isEmpty {
                 if let initialParent = initialParentPathId {
-                    pathStack = [nil, initialParent]
+                    // Start with source's pathId as root
+                    pathStack = [initialParent]
                 } else {
                     pathStack = [nil]
                 }
@@ -110,9 +111,9 @@ struct TUISourceBrowseView: View {
         .onKeyPress("k") { selectPrevious() }
         .onKeyPress("g") { selectFirst() }
         .onKeyPress("G") { selectLast() }
-        // Pagination
-        .onKeyPress("\u{15}") { pageUp() }    // Ctrl+U
-        .onKeyPress("\u{04}") { pageDown() }  // Ctrl+D
+        // Pagination (using different keys to avoid Ctrl+D quitting terminal)
+        .onKeyPress("u") { pageUp() }    // 'u' for up
+        .onKeyPress("d") { pageDown() }  // 'd' for down
         // Actions
         .onKeyPress("l") { openOrEnterSelected() }
         .onKeyPress("\r") { openOrEnterSelected() }
@@ -206,7 +207,7 @@ struct TUISourceBrowseView: View {
             if items.count > pageSize {
                 HStack {
                     Text("Showing \(pageOffset + 1)-\(min(pageOffset + pageSize, items.count)) of \(items.count)")
-                    Text(" [Ctrl+u/d for pages]")
+                    Text(" [u/d for pages]")
                     Spacer()
                 }
                 Text("")
