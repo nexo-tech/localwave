@@ -326,8 +326,8 @@ struct TUIClassicLayout: View {
     // MARK: - Song List
 
     private var songList: some View {
-        let terminalWidth = dependencies.terminalSizeTracker.width
-        let terminalHeight = dependencies.terminalSizeTracker.height
+        let terminalWidth = max(50, dependencies.terminalSizeTracker.width)  // Ensure minimum terminal size
+        let terminalHeight = max(20, dependencies.terminalSizeTracker.height)
         let sidebarWidth = 30
         let availableWidth = max(10, terminalWidth - sidebarWidth - 4)  // Ensure positive width
         let titleWidth = max(5, Int(Double(availableWidth) * 0.5))
@@ -402,7 +402,13 @@ struct TUIClassicLayout: View {
     }
 
     private func songRow(song: MockSong, index: Int, isSelected: Bool, titleWidth: Int, artistWidth: Int) -> some View {
-        HStack {
+        let _ = {
+            if titleWidth < 0 || artistWidth < 0 {
+                print("ERROR: songRow \(index) has negative width! titleWidth=\(titleWidth), artistWidth=\(artistWidth)")
+            }
+        }()
+
+        return HStack {
             // Selection indicator
             Text(isSelected ? "►" : " ")
                 .foregroundColor(theme.green)
@@ -438,7 +444,7 @@ struct TUIClassicLayout: View {
     // MARK: - Status Bar
 
     private var statusBar: some View {
-        let width = dependencies.terminalSizeTracker.width
+        let width = max(10, dependencies.terminalSizeTracker.width)
 
         return VStack(spacing: 0) {
             Text(String(repeating: "═", count: width))
