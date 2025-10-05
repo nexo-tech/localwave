@@ -103,16 +103,19 @@ public struct TUITable<Item>: View {
 
     private var dataRows: some View {
         VStack(spacing: 0) {
-            // Calculate visible range
-            let visibleStart = state.scrollOffset
+            // Calculate visible range with bounds checking
+            let visibleStart = min(state.scrollOffset, items.count)
             let visibleEnd = min(state.scrollOffset + state.effectiveVisibleHeight, items.count)
 
-            ForEach(visibleStart..<visibleEnd, id: \.self) { index in
-                let item = items[index]
-                let isSelected = index == state.selectedIndex
-                let values = rowContent(item, isSelected)
+            // Only render if we have a valid range
+            if visibleStart < visibleEnd {
+                ForEach(visibleStart..<visibleEnd, id: \.self) { index in
+                    let item = items[index]
+                    let isSelected = index == state.selectedIndex
+                    let values = rowContent(item, isSelected)
 
-                dataRow(values: values, isSelected: isSelected)
+                    dataRow(values: values, isSelected: isSelected)
+                }
             }
         }
     }

@@ -108,7 +108,7 @@ struct TUIQueueView: View {
     }
 
     private func queueListView(queue: [Song], currentIndex: Int?) -> some View {
-        let visibleStart = listState.scrollOffset
+        let visibleStart = min(listState.scrollOffset, queue.count)
         let visibleEnd = min(listState.scrollOffset + listState.effectiveVisibleHeight, queue.count)
 
         return VStack(spacing: 0) {
@@ -121,12 +121,14 @@ struct TUIQueueView: View {
                 Text("")
             }
 
-            // Queue items
-            ForEach(visibleStart..<visibleEnd, id: \.self) { globalIndex in
-                let song = queue[globalIndex]
-                let isSelected = globalIndex == listState.selectedIndex
-                let isPlaying = currentIndex == globalIndex
-                queueRow(song: song, index: globalIndex + 1, isSelected: isSelected, isPlaying: isPlaying)
+            // Queue items - only render if we have a valid range
+            if visibleStart < visibleEnd {
+                ForEach(visibleStart..<visibleEnd, id: \.self) { globalIndex in
+                    let song = queue[globalIndex]
+                    let isSelected = globalIndex == listState.selectedIndex
+                    let isPlaying = currentIndex == globalIndex
+                    queueRow(song: song, index: globalIndex + 1, isSelected: isSelected, isPlaying: isPlaying)
+                }
             }
         }
     }

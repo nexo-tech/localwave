@@ -345,18 +345,21 @@ struct TUIClassicLayout: View {
             Text(String(repeating: "─", count: availableWidth))
                 .foregroundColor(theme.overlay1)
 
-            // Songs - use calculated height directly
-            let visibleStart = songListState.scrollOffset
+            // Songs - use calculated height directly with bounds checking
+            let visibleStart = min(songListState.scrollOffset, mockSongs.count)
             let visibleEnd = min(songListState.scrollOffset + calculatedHeight, mockSongs.count)
 
-            ForEach(visibleStart..<visibleEnd, id: \.self) { index in
-                songRow(
-                    song: mockSongs[index],
-                    index: index,
-                    isSelected: index == songListState.selectedIndex,
-                    titleWidth: titleWidth,
-                    artistWidth: artistWidth
-                )
+            // Only render if we have a valid range
+            if visibleStart < visibleEnd {
+                ForEach(visibleStart..<visibleEnd, id: \.self) { index in
+                    songRow(
+                        song: mockSongs[index],
+                        index: index,
+                        isSelected: index == songListState.selectedIndex,
+                        titleWidth: titleWidth,
+                        artistWidth: artistWidth
+                    )
+                }
             }
 
             Spacer()

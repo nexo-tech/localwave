@@ -121,14 +121,17 @@ public struct TUIList<Item, RowContent: View>: View {
                 Text("(empty)")
                 Spacer()
             } else {
-                // Calculate visible range
-                let visibleStart = state.scrollOffset
+                // Calculate visible range with bounds checking
+                let visibleStart = min(state.scrollOffset, items.count)
                 let visibleEnd = min(state.scrollOffset + state.effectiveVisibleHeight, items.count)
 
-                ForEach(visibleStart..<visibleEnd, id: \.self) { index in
-                    let item = items[index]
-                    let isSelected = index == state.selectedIndex
-                    rowContent(item, isSelected)
+                // Only render if we have a valid range
+                if visibleStart < visibleEnd {
+                    ForEach(visibleStart..<visibleEnd, id: \.self) { index in
+                        let item = items[index]
+                        let isSelected = index == state.selectedIndex
+                        rowContent(item, isSelected)
+                    }
                 }
 
                 Spacer()
@@ -159,14 +162,17 @@ public struct TUIIdentifiableList<Item: Identifiable, RowContent: View>: View {
                 Text("(empty)")
                 Spacer()
             } else {
-                // Calculate visible range
-                let visibleStart = state.scrollOffset
+                // Calculate visible range with bounds checking
+                let visibleStart = min(state.scrollOffset, items.count)
                 let visibleEnd = min(state.scrollOffset + state.effectiveVisibleHeight, items.count)
 
-                ForEach(Array(items[visibleStart..<visibleEnd].enumerated()), id: \.element.id) { offset, item in
-                    let index = visibleStart + offset
-                    let isSelected = index == state.selectedIndex
-                    rowContent(item, isSelected)
+                // Only render if we have a valid range
+                if visibleStart < visibleEnd {
+                    ForEach(Array(items[visibleStart..<visibleEnd].enumerated()), id: \.element.id) { offset, item in
+                        let index = visibleStart + offset
+                        let isSelected = index == state.selectedIndex
+                        rowContent(item, isSelected)
+                    }
                 }
 
                 Spacer()
