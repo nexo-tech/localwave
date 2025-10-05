@@ -8,10 +8,17 @@
 import AVFoundation
 import Combine
 import os
-import SwiftUI
 import LocalWaveDomain
 import LocalWaveCore
 import LocalWaveData
+
+#if canImport(UIKit)
+import SwiftUI
+import UIKit
+#elseif canImport(AppKit)
+import AppKit
+#endif
+
 #if canImport(MediaPlayer)
 import MediaPlayer
 #endif
@@ -503,4 +510,14 @@ class PlayerViewModel: NSObject, ObservableObject, @preconcurrency AVAudioPlayer
             return nil
         }
     }
+
+    #if canImport(MediaPlayer)
+    // Helper function to load cover art for a song (iOS-specific for Now Playing)
+    private func loadCoverArt(for song: Song) -> UIImage? {
+        guard let path = song.coverArtPath else { return nil }
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let url = docs.appendingPathComponent(path)
+        return UIImage(contentsOfFile: url.path)
+    }
+    #endif
 }

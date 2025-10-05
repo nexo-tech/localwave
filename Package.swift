@@ -75,7 +75,8 @@ let package = Package(
                 "LocalWaveCore",
                 "LocalWaveData"
             ],
-            path: "localwave/Sources/Features/Player/ViewModels"
+            path: "localwave/Sources/Features/Player/ViewModels",
+            exclude: ["PlayerViewModel.swift"]
         ),
 
         // MARK: - TUI Executable Target
