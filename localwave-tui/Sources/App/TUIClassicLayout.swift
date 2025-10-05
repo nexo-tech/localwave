@@ -127,7 +127,7 @@ struct TUIClassicLayout: View {
 
             // Auto-scroll if selection goes below visible area
             if newIndex >= songListState.scrollOffset + visibleHeight {
-                songListState.scrollOffset = newIndex - visibleHeight + 1
+                songListState.scrollOffset = max(0, newIndex - visibleHeight + 1)
             }
         }
     }
@@ -163,7 +163,7 @@ struct TUIClassicLayout: View {
 
         // Auto-scroll if selection goes below visible area
         if newIndex >= songListState.scrollOffset + visibleHeight {
-            songListState.scrollOffset = min(newIndex - visibleHeight + 1, mockSongs.count - visibleHeight)
+            songListState.scrollOffset = max(0, min(newIndex - visibleHeight + 1, mockSongs.count - visibleHeight))
         }
     }
 
