@@ -106,8 +106,9 @@ public struct TUITheme {
     }
 
     public static func truncate(_ text: String, width: Int) -> String {
+        guard width > 0 else { return "" }
         if text.count > width {
-            return String(text.prefix(width - 1)) + "…"
+            return String(text.prefix(max(0, width - 1))) + "…"
         }
         return text + String(repeating: " ", count: max(0, width - text.count))
     }
