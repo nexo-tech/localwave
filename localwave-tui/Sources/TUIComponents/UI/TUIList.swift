@@ -13,11 +13,25 @@ public struct TUIListState {
     public var selectedIndex: Int
     public var scrollOffset: Int
     public var visibleHeight: Int
+    /// Auto-calculated available height based on terminal size and UI chrome
+    public var availableHeight: Int?
 
     public init(selectedIndex: Int = 0, scrollOffset: Int = 0, visibleHeight: Int = 10) {
         self.selectedIndex = selectedIndex
         self.scrollOffset = scrollOffset
         self.visibleHeight = visibleHeight
+        self.availableHeight = nil
+    }
+
+    /// Get the effective visible height (uses availableHeight if set, otherwise falls back to visibleHeight)
+    public var effectiveVisibleHeight: Int {
+        return availableHeight ?? visibleHeight
+    }
+
+    /// Update the available height based on terminal size and chrome (header, footer, etc.)
+    public mutating func updateAvailableHeight(terminalHeight: Int, reservedLines: Int) {
+        // Reserve lines for UI chrome (header, tab bar, mini player, etc.)
+        self.availableHeight = max(1, terminalHeight - reservedLines)
     }
 
     /// Move selection down, updating scroll offset if needed
@@ -26,8 +40,8 @@ public struct TUIListState {
         selectedIndex = min(selectedIndex + 1, itemCount - 1)
 
         // Auto-scroll if selection goes below visible area
-        if selectedIndex >= scrollOffset + visibleHeight {
-            scrollOffset = selectedIndex - visibleHeight + 1
+        if selectedIndex >= scrollOffset + effectiveVisibleHeight {
+            scrollOffset = selectedIndex - effectiveVisibleHeight + 1
         }
     }
 
@@ -51,7 +65,7 @@ public struct TUIListState {
     public mutating func selectLast(itemCount: Int) {
         guard itemCount > 0 else { return }
         selectedIndex = itemCount - 1
-        scrollOffset = max(0, itemCount - visibleHeight)
+        scrollOffset = max(0, itemCount - effectiveVisibleHeight)
     }
 
     /// Reset state
@@ -109,7 +123,7 @@ public struct TUIList<Item, RowContent: View>: View {
             } else {
                 // Calculate visible range
                 let visibleStart = state.scrollOffset
-                let visibleEnd = min(state.scrollOffset + state.visibleHeight, items.count)
+                let visibleEnd = min(state.scrollOffset + state.effectiveVisibleHeight, items.count)
 
                 ForEach(visibleStart..<visibleEnd, id: \.self) { index in
                     let item = items[index]
@@ -147,7 +161,7 @@ public struct TUIIdentifiableList<Item: Identifiable, RowContent: View>: View {
             } else {
                 // Calculate visible range
                 let visibleStart = state.scrollOffset
-                let visibleEnd = min(state.scrollOffset + state.visibleHeight, items.count)
+                let visibleEnd = min(state.scrollOffset + state.effectiveVisibleHeight, items.count)
 
                 ForEach(Array(items[visibleStart..<visibleEnd].enumerated()), id: \.element.id) { offset, item in
                     let index = visibleStart + offset

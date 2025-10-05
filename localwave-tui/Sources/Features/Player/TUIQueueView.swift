@@ -24,44 +24,46 @@ import LocalWavePlayer
 struct TUIQueueView: View {
     @ObservedObject var playerViewModel: BasePlayerViewModel
     @Binding var navigationState: NavigationState
+    let dependencies: TUIDependencyContainer
 
-    @State private var selectedIndex = 0
-    @State private var pageOffset = 0
-    private let pageSize = 10
+    @State private var listState = TUIListState()
 
     var body: some View {
         let queue = playerViewModel.queue
         let currentSong = playerViewModel.currentSong
         let currentIndex = getCurrentSongIndex(queue: queue, currentSong: currentSong)
 
-        return VStack(spacing: 1) {
-            headerView(queueCount: queue.count, totalDuration: calculateTotalDuration(queue: queue))
-            Text("")
+        return TerminalAwareList(
+            state: $listState,
+            sizeTracker: dependencies.terminalSizeTracker,
+            reservedLines: TerminalSizeHelper.ReservedLines.playerQueue
+        ) {
+            VStack(spacing: 1) {
+                headerView(queueCount: queue.count, totalDuration: calculateTotalDuration(queue: queue))
+                Text("")
 
-            if queue.isEmpty {
-                emptyQueueView
-            } else {
-                queueListView(queue: queue, currentIndex: currentIndex)
+                if queue.isEmpty {
+                    emptyQueueView
+                } else {
+                    queueListView(queue: queue, currentIndex: currentIndex)
+                }
+
+                Spacer()
+                helpBar
             }
-
-            Spacer()
-            helpBar
         }
         .onAppear {
             // Center on currently playing song
             if let currentIndex = currentIndex {
-                selectedIndex = currentIndex
+                listState.selectedIndex = currentIndex
                 centerOnCurrentSong(queueSize: queue.count, currentIndex: currentIndex)
             }
         }
         // Navigation
-        .onKeyPress("j") { selectNext(queueSize: queue.count) }
-        .onKeyPress("k") { selectPrevious() }
-        .onKeyPress("g") { selectFirst() }
-        .onKeyPress("G") { selectLast(queueSize: queue.count) }
-        // Page navigation
-        .onKeyPress("u") { pageUp() }
-        .onKeyPress("d") { pageDown(queueSize: queue.count) }
+        .onKeyPress("j") { listState.selectNext(itemCount: queue.count) }
+        .onKeyPress("k") { listState.selectPrevious() }
+        .onKeyPress("g") { listState.selectFirst() }
+        .onKeyPress("G") { listState.selectLast(itemCount: queue.count) }
         // Actions
         .onKeyPress("\u{7F}") { removeSelected() } // Backspace
         .onKeyPress("x") { removeSelected() }
@@ -106,23 +108,23 @@ struct TUIQueueView: View {
     }
 
     private func queueListView(queue: [Song], currentIndex: Int?) -> some View {
-        let paginatedQueue = getPaginatedQueue(queue: queue)
+        let visibleStart = listState.scrollOffset
+        let visibleEnd = min(listState.scrollOffset + listState.effectiveVisibleHeight, queue.count)
 
         return VStack(spacing: 0) {
-            // Page indicator
-            if queue.count > pageSize {
+            // Scroll indicator
+            if queue.count > listState.effectiveVisibleHeight {
                 HStack {
-                    Text("Showing \(pageOffset + 1)-\(min(pageOffset + pageSize, queue.count)) of \(queue.count)")
-                    Text(" [u/d for pages]")
+                    Text("Showing \(visibleStart + 1)-\(visibleEnd) of \(queue.count)")
                     Spacer()
                 }
                 Text("")
             }
 
             // Queue items
-            ForEach(Array(paginatedQueue.enumerated()), id: \.element.id) { index, song in
-                let globalIndex = pageOffset + index
-                let isSelected = globalIndex == selectedIndex
+            ForEach(visibleStart..<visibleEnd, id: \.self) { globalIndex in
+                let song = queue[globalIndex]
+                let isSelected = globalIndex == listState.selectedIndex
                 let isPlaying = currentIndex == globalIndex
                 queueRow(song: song, index: globalIndex + 1, isSelected: isSelected, isPlaying: isPlaying)
             }
@@ -187,142 +189,75 @@ struct TUIQueueView: View {
         }
     }
 
-    private func getPaginatedQueue(queue: [Song]) -> ArraySlice<Song> {
-        let start = pageOffset
-        let end = min(start + pageSize, queue.count)
-        guard start < queue.count else { return [] }
-        return queue[start..<end]
-    }
-
     private func centerOnCurrentSong(queueSize: Int, currentIndex: Int) {
-        // Center the page on the current song
-        pageOffset = max(0, currentIndex - pageSize / 2)
-        pageOffset = min(pageOffset, max(0, queueSize - pageSize))
-    }
-
-    // MARK: - Navigation Actions
-
-    private func selectNext(queueSize: Int) {
-        guard queueSize > 0 else { return }
-        if selectedIndex < queueSize - 1 {
-            selectedIndex += 1
-            // Auto-scroll to next page if needed
-            if selectedIndex >= pageOffset + pageSize {
-                pageOffset = min(selectedIndex, queueSize - pageSize)
-            }
-        }
-    }
-
-    private func selectPrevious() {
-        if selectedIndex > 0 {
-            selectedIndex -= 1
-            // Auto-scroll to previous page if needed
-            if selectedIndex < pageOffset {
-                pageOffset = max(0, selectedIndex)
-            }
-        }
-    }
-
-    private func selectFirst() {
-        selectedIndex = 0
-        pageOffset = 0
-    }
-
-    private func selectLast(queueSize: Int) {
-        guard queueSize > 0 else { return }
-        selectedIndex = queueSize - 1
-        pageOffset = max(0, queueSize - pageSize)
-    }
-
-    private func pageUp() {
-        pageOffset = max(0, pageOffset - pageSize)
-        selectedIndex = max(0, min(selectedIndex, pageOffset + pageSize - 1))
-    }
-
-    private func pageDown(queueSize: Int) {
-        let maxOffset = max(0, queueSize - pageSize)
-        pageOffset = min(maxOffset, pageOffset + pageSize)
-        selectedIndex = min(queueSize - 1, pageOffset)
+        // Center the view on the current song
+        let halfHeight = listState.effectiveVisibleHeight / 2
+        listState.scrollOffset = max(0, currentIndex - halfHeight)
+        listState.scrollOffset = min(listState.scrollOffset, max(0, queueSize - listState.effectiveVisibleHeight))
     }
 
     // MARK: - Queue Actions
 
     private func removeSelected() {
         let queue = playerViewModel.queue
-        guard selectedIndex >= 0 && selectedIndex < queue.count else { return }
+        guard listState.selectedIndex >= 0 && listState.selectedIndex < queue.count else { return }
 
         // Can't remove currently playing song
         let currentSong = playerViewModel.currentSong
         if let currentIndex = getCurrentSongIndex(queue: queue, currentSong: currentSong),
-           selectedIndex == currentIndex {
+           listState.selectedIndex == currentIndex {
             return
         }
 
-        playerViewModel.removeFromQueue(at: selectedIndex)
+        playerViewModel.removeFromQueue(at: listState.selectedIndex)
 
         // Adjust selection
         let newQueueSize = queue.count - 1
-        if selectedIndex >= newQueueSize && newQueueSize > 0 {
-            selectedIndex = newQueueSize - 1
-        }
-
-        // Adjust page offset
-        if pageOffset > 0 && pageOffset >= newQueueSize {
-            pageOffset = max(0, newQueueSize - pageSize)
+        if listState.selectedIndex >= newQueueSize && newQueueSize > 0 {
+            listState.selectedIndex = newQueueSize - 1
         }
     }
 
     private func clearQueue() {
         playerViewModel.clearQueue()
-        selectedIndex = 0
-        pageOffset = 0
+        listState.reset()
     }
 
     private func moveUp() {
-        guard selectedIndex > 0 else { return }
+        guard listState.selectedIndex > 0 else { return }
         let queue = playerViewModel.queue
-        guard selectedIndex < queue.count else { return }
+        guard listState.selectedIndex < queue.count else { return }
 
         // Can't move currently playing song
         let currentSong = playerViewModel.currentSong
         if let currentIndex = getCurrentSongIndex(queue: queue, currentSong: currentSong),
-           selectedIndex == currentIndex {
+           listState.selectedIndex == currentIndex {
             return
         }
 
         // Move song up in queue
-        playerViewModel.moveSong(from: selectedIndex, to: selectedIndex - 1)
+        playerViewModel.moveSong(from: listState.selectedIndex, to: listState.selectedIndex - 1)
 
         // Update selection to follow the moved song
-        selectedIndex -= 1
-
-        // Adjust page if needed
-        if selectedIndex < pageOffset {
-            pageOffset = max(0, selectedIndex)
-        }
+        listState.selectPrevious()
     }
 
     private func moveDown(queueSize: Int) {
-        guard selectedIndex < queueSize - 1 else { return }
+        guard listState.selectedIndex < queueSize - 1 else { return }
         let queue = playerViewModel.queue
-        guard selectedIndex < queue.count else { return }
+        guard listState.selectedIndex < queue.count else { return }
 
         // Can't move currently playing song
         let currentSong = playerViewModel.currentSong
         if let currentIndex = getCurrentSongIndex(queue: queue, currentSong: currentSong),
-           selectedIndex == currentIndex {
+           listState.selectedIndex == currentIndex {
             return
         }
 
         // Move song down in queue
-        playerViewModel.moveSong(from: selectedIndex, to: selectedIndex + 1)
+        playerViewModel.moveSong(from: listState.selectedIndex, to: listState.selectedIndex + 1)
 
         // Update selection to follow the moved song
-        selectedIndex += 1
-
-        // Adjust page if needed
-        if selectedIndex >= pageOffset + pageSize {
-            pageOffset = min(selectedIndex, queueSize - pageSize)
-        }
+        listState.selectNext(itemCount: queueSize)
     }
 }

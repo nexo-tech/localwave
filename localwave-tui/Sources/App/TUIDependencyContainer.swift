@@ -30,6 +30,8 @@ class TUIDependencyContainer {
     let playlistRepo: PlaylistRepository
     let playlistSongRepo: PlaylistSongRepository
     let playerViewModel: BasePlayerViewModel
+    let terminalSizeTracker: TerminalSizeTracker
+    let theme: TUITheme
 
     let logger = createLogger(subsystem: subsystem, category: "TUIDependencyContainer")
 
@@ -98,6 +100,12 @@ class TUIDependencyContainer {
             playlistSongRepo: playlistSongRepo,
             logger: createLogger(subsystem: subsystem, category: "BasePlayerViewModel")
         )
+
+        // Initialize terminal size tracker
+        terminalSizeTracker = TerminalSizeTracker()
+
+        // Load theme
+        theme = TUITheme.load()
 
         logger.info("TUI DependencyContainer initialized successfully")
     }

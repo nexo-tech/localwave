@@ -38,8 +38,8 @@ class TUIApp {
         // Trigger app launch logic (same as iOS)
         dependencies.handleAppLaunch()
 
-        // Launch SwiftTUI application
-        try await Application(rootView: TUIMainView(dependencies: dependencies)).start()
+        // Launch SwiftTUI application with classic iPod/WinAmp layout
+        try await Application(rootView: TUIClassicLayout(dependencies: dependencies)).start()
     }
 
 

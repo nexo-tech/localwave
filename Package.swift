@@ -34,8 +34,8 @@ let package = Package(
         )
     ],
     dependencies: [
-        // SwiftTUI for terminal interface (fork with onKeyPress support)
-        .package(url: "https://github.com/DandyLyons/SwiftTUI.git", branch: "onKeyPress"),
+        // SwiftTUI for terminal interface (local copy for development)
+        .package(path: "SwiftTUI"),
         // SQLite.swift - shared with iOS app
         .package(url: "https://github.com/stephencelis/SQLite.swift", from: "0.15.3")
     ],

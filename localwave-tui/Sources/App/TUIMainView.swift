@@ -82,7 +82,7 @@ struct TUIMainView: View {
         case .globalSearch:
             TUIGlobalSearchView(dependencies: dependencies, navigationState: navigationState)
         case .queue:
-            TUIQueueView(playerViewModel: dependencies.playerViewModel, navigationState: navigationState)
+            TUIQueueView(playerViewModel: dependencies.playerViewModel, navigationState: navigationState, dependencies: dependencies)
         default:
             Text("Route not implemented yet")
         }

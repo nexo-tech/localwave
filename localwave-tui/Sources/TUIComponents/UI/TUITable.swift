@@ -105,7 +105,7 @@ public struct TUITable<Item>: View {
         VStack(spacing: 0) {
             // Calculate visible range
             let visibleStart = state.scrollOffset
-            let visibleEnd = min(state.scrollOffset + state.visibleHeight, items.count)
+            let visibleEnd = min(state.scrollOffset + state.effectiveVisibleHeight, items.count)
 
             ForEach(visibleStart..<visibleEnd, id: \.self) { index in
                 let item = items[index]
