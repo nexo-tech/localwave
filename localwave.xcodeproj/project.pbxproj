@@ -238,7 +238,7 @@
 			mainGroup = 10811E662D31CF01008CAD75;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "localwave" */,
+				10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "." */,
 				10FA3CCA2D32887D00E25072 /* XCRemoteSwiftPackageReference "SQLite" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -618,7 +618,7 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "localwave" */ = {
+		10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "." */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = .;
 		};
@@ -648,22 +648,22 @@
 		};
 		10DOMAIN2D32887D00E25072 /* LocalWaveDomain */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "localwave" */;
+			package = 10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "." */;
 			productName = LocalWaveDomain;
 		};
 		10LWCORE2D32887D00E25072 /* LocalWaveCore */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "localwave" */;
+			package = 10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "." */;
 			productName = LocalWaveCore;
 		};
 		10LWDATA2D32887D00E25072 /* LocalWaveData */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "localwave" */;
+			package = 10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "." */;
 			productName = LocalWaveData;
 		};
 		10LWPLAY2D32887D00E25072 /* LocalWavePlayer */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "localwave" */;
+			package = 10LOCALP2D32887D00E25072 /* XCLocalSwiftPackageReference "." */;
 			productName = LocalWavePlayer;
 		};
 /* End XCSwiftPackageProductDependency section */
