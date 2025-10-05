@@ -329,9 +329,9 @@ struct TUIClassicLayout: View {
         let terminalWidth = dependencies.terminalSizeTracker.width
         let terminalHeight = dependencies.terminalSizeTracker.height
         let sidebarWidth = 30
-        let availableWidth = terminalWidth - sidebarWidth - 4  // Account for borders and spacing
-        let titleWidth = Int(Double(availableWidth) * 0.5)
-        let artistWidth = Int(Double(availableWidth) * 0.35)
+        let availableWidth = max(10, terminalWidth - sidebarWidth - 4)  // Ensure positive width
+        let titleWidth = max(5, Int(Double(availableWidth) * 0.5))
+        let artistWidth = max(5, Int(Double(availableWidth) * 0.35))
 
         // Calculate visible height: total height - player bar (3) - header (2) - status (3) - borders (2)
         let calculatedHeight = max(5, terminalHeight - 10)
@@ -480,8 +480,9 @@ struct TUIClassicLayout: View {
     }
 
     private func truncate(_ text: String, width: Int) -> String {
+        guard width > 0 else { return "" }
         if text.count > width {
-            return String(text.prefix(width - 1)) + "…"
+            return String(text.prefix(max(0, width - 1))) + "…"
         }
         return text + String(repeating: " ", count: max(0, width - text.count))
     }
