@@ -31,8 +31,6 @@ class TUIDependencyContainer {
     let playlistSongRepo: PlaylistSongRepository
     let playerViewModel: BasePlayerViewModel
 
-    private var backgroundFileService: BackgroundFileService?
-
     let logger = TUILogger(subsystem: subsystem, category: "TUIDependencyContainer")
 
     // MARK: - Initialization
@@ -89,7 +87,6 @@ class TUIDependencyContainer {
         playerPersistenceService = DefaultPlayerPersistenceService(songRepo: songRepo)
         playlistRepo = try SQLitePlaylistRepository(db: db)
         playlistSongRepo = try SQLitePlaylistSongRepository(db: db)
-        backgroundFileService = BackgroundFileService(songRepo: songRepo)
 
         // Initialize player view model with AVAudioPlayer (proper macOS audio support)
         let audioPlayer = AVAudioPlayerAdapter()
@@ -110,29 +107,9 @@ class TUIDependencyContainer {
 
     func handleAppLaunch() {
         logger.debug("Handling app launch...")
-        startBackgroundServices()
-        verifyPendingCopies()
+        // TUI doesn't need background file service - we have direct filesystem access
+        // No iOS bookmarks or file copying needed
         logger.debug("App launch handling complete")
-    }
-
-    private func verifyPendingCopies() {
-        Task(priority: .utility) {
-            let pending = await songRepository.getSongsNeedingCopy()
-            logger.debug("Found \(pending.count) songs needing copy verification")
-        }
-    }
-
-    private func startBackgroundServices() {
-        logger.debug("starting background service...")
-        guard let service = backgroundFileService else {
-            logger.error("failed to initialise background file service")
-            return
-        }
-
-        Task {
-            await service.start()
-            logger.debug("background file service startup triggered")
-        }
     }
 
     // MARK: - Factory Methods (Future ViewModels)
