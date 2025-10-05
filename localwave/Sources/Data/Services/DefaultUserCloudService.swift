@@ -5,7 +5,7 @@ import os
 import SQLite
 
 public class DefaultUserCloudService: UserCloudService {
-    let logger = Logger(subsystem: subsystem, category: "UserCloudService")
+    let logger = createLogger(subsystem: subsystem, category: "UserCloudService")
     public func resolveCurrentICloudUser() async throws -> User? {
         if let icloudId = try await iCloudProvider.getCurrentICloudUserID() {
             logger.debug("found cloudID \(icloudId)")

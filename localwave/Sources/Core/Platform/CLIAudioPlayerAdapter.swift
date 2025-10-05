@@ -19,7 +19,7 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
     private var cachedDuration: TimeInterval = 0
     private var currentURL: URL?
     private var currentPlayingProcess: Process?  // Track which process should trigger delegate
-    private let logger = Logger(subsystem: subsystem, category: "CLIAudioPlayerAdapter")
+    private let logger = createLogger(subsystem: subsystem, category: "CLIAudioPlayerAdapter")
 
     public weak var delegate: AudioPlayerDelegate?
 

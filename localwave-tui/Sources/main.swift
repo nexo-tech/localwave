@@ -4,6 +4,9 @@ import LocalWaveCore
 @main
 struct LocalWaveTUI {
     static func main() async {
+        // Configure TUI logging mode (file-based, not stdout)
+        configureLogging(useTUILogger: true)
+
         // Initialize file logger (must be first to capture all logs)
         let logPath = FileLogger.shared.getLogFilePath()
         fputs("📝 Logs: \(logPath)\n", stderr)

@@ -32,7 +32,7 @@ public actor SQLiteSourcePathSearchRepository: SourcePathSearchRepository {
         logger.debug("Deleted all FTS entries for source: \(sourceId)")
     }
 
-    private let logger = Logger(subsystem: subsystem, category: "SourcePathSearchRepository")
+    private let logger = createLogger(subsystem: subsystem, category: "SourcePathSearchRepository")
 
     // MARK: - Batch Delete by sourceId, excluding runId
 

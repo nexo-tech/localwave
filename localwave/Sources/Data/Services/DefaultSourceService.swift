@@ -8,7 +8,7 @@ public class DefaultSourceService: SourceService {
         return sourceImportService
     }
 
-    let logger = Logger(subsystem: subsystem, category: "SourceService")
+    let logger = createLogger(subsystem: subsystem, category: "SourceService")
 
     public func repository() -> SourceRepository {
         return sourceRepo

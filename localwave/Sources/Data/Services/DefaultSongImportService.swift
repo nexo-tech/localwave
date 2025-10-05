@@ -28,7 +28,7 @@ public actor DefaultSongImportService: SongImportService {
         releaseSecurityAccess()
     }
 
-    private let logger = Logger(subsystem: subsystem, category: "SongImporter")
+    private let logger = createLogger(subsystem: subsystem, category: "SongImporter")
     private let songRepo: SongRepository
     private let sourcePathRepo: SourcePathRepository
     private let sourceRepo: SourceRepository

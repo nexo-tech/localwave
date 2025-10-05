@@ -4,7 +4,7 @@ import LocalWaveDomain
 import LocalWaveCore
 
 public actor DefaultSourceImportService: SourceImportService {
-    let logger = Logger(subsystem: subsystem, category: "SourceImportService")
+    let logger = createLogger(subsystem: subsystem, category: "SourceImportService")
 
     private let sourceRepository: SourceRepository
     private let sourcePathRepository: SourcePathRepository

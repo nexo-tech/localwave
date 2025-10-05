@@ -20,7 +20,7 @@ public actor SQLiteSourcePathRepository: SourcePathRepository {
     private let colCreatedAt: SQLite.Expression<Date>
     private let colUpdatedAt: SQLite.Expression<Date?>
 
-    private let logger = Logger(subsystem: subsystem, category: "SQLiteSourcePathRepository")
+    private let logger = createLogger(subsystem: subsystem, category: "SQLiteSourcePathRepository")
 
     public func getByPathId(sourceId: Int64, pathId: Int64) async throws -> SourcePath? {
         let query = table.filter(colSourceId == sourceId && colPathId == pathId)

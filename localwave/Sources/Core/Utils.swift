@@ -84,7 +84,7 @@ public struct FileHelper {
 }
 
 public func setupSQLiteConnection(dbName: String) -> Connection? {
-    let logger = Logger(subsystem: subsystem, category: "setupSQLiteConnection")
+    let logger = createLogger(subsystem: subsystem, category: "setupSQLiteConnection")
     logger.debug("setting up connection ...")
     let dbPath = NSSearchPathForDirectoriesInDomains(
         .documentDirectory,

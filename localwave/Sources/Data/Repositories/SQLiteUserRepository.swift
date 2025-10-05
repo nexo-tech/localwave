@@ -7,7 +7,7 @@ import SQLite
 let usersTableName = "users"
 
 public actor SQLiteUserRepository: UserRepository {
-    let logger = Logger(subsystem: subsystem, category: "SQLiteUserRepository")
+    let logger = createLogger(subsystem: subsystem, category: "SQLiteUserRepository")
 
     public func findByIcloudId(icloudId: Int64) throws -> User? {
         if let row = try db.pluck(table.filter(colIcloudId == icloudId)) {

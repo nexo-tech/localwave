@@ -11,7 +11,7 @@ public actor SQLitePlaylistSongRepository: PlaylistSongRepository {
     private let colPlaylistId: SQLite.Expression<Int64>
     private let colSongId: SQLite.Expression<Int64>
     private let colPosition: SQLite.Expression<Int>
-    private let logger = Logger(subsystem: subsystem, category: "SQLitePlaylistSongRepository")
+    private let logger = createLogger(subsystem: subsystem, category: "SQLitePlaylistSongRepository")
 
     public init(db: Connection) throws {
         self.db = db

@@ -23,7 +23,7 @@ public actor DefaultPlayerPersistenceService: PlayerPersistenceService {
         return nil
     }
 
-    let logger = Logger(subsystem: subsystem, category: "PlayerPersistenceService")
+    let logger = createLogger(subsystem: subsystem, category: "PlayerPersistenceService")
 
     public func restore() async -> ([Song], Int, Song?)? {
         guard let songIds = UserDefaults.standard.array(forKey: queueKey) as? [Int64],

@@ -4,7 +4,7 @@ import LocalWaveCore
 import os
 
 public actor DefaultSourceSyncService: SourceSyncService {
-    let logger = Logger(subsystem: subsystem, category: "SourceSyncService")
+    let logger = createLogger(subsystem: subsystem, category: "SourceSyncService")
 
     let sourceRepository: SourceRepository
     let sourcePathRepository: SourcePathRepository

@@ -14,7 +14,7 @@ import os
 @MainActor
 public class AVAudioPlayerAdapter: NSObject, AudioPlayerProtocol, @preconcurrency AVAudioPlayerDelegate {
     private var player: AVAudioPlayer?
-    private let logger = Logger(subsystem: subsystem, category: "AVAudioPlayerAdapter")
+    private let logger = createLogger(subsystem: subsystem, category: "AVAudioPlayerAdapter")
 
     public weak var delegate: AudioPlayerDelegate?
 

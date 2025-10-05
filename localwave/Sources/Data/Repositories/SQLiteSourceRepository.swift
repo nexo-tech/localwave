@@ -21,7 +21,7 @@ public actor SQLiteSourceRepository: SourceRepository {
     private var colLastSyncedAt: SQLite.Expression<Date?>
     private var colUpdatedAt: SQLite.Expression<Date?>
 
-    private let logger = Logger(subsystem: subsystem, category: "SQLiteSourceRepository")
+    private let logger = createLogger(subsystem: subsystem, category: "SQLiteSourceRepository")
 
     public init(db: Connection) throws {
         // Existing columns

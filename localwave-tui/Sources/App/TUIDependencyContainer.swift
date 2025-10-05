@@ -31,7 +31,7 @@ class TUIDependencyContainer {
     let playlistSongRepo: PlaylistSongRepository
     let playerViewModel: BasePlayerViewModel
 
-    let logger = TUILogger(subsystem: subsystem, category: "TUIDependencyContainer")
+    let logger = createLogger(subsystem: subsystem, category: "TUIDependencyContainer")
 
     // MARK: - Initialization
 
@@ -90,14 +90,13 @@ class TUIDependencyContainer {
 
         // Initialize player view model with AVAudioPlayer (proper macOS audio support)
         let audioPlayer = AVAudioPlayerAdapter()
-        let playerLogger = TUILogger(subsystem: subsystem, category: "BasePlayerViewModel")
         playerViewModel = BasePlayerViewModel(
             player: audioPlayer,
             playerPersistenceService: playerPersistenceService,
             songRepo: songRepo,
             playlistRepo: playlistRepo,
             playlistSongRepo: playlistSongRepo,
-            logger: playerLogger
+            logger: createLogger(subsystem: subsystem, category: "BasePlayerViewModel")
         )
 
         logger.info("TUI DependencyContainer initialized successfully")
@@ -125,7 +124,7 @@ class TUIDependencyContainer {
 /// Uses XDG Base Directory specification: ~/.local/share/localwave
 /// Falls back to ~/Library/Application Support/localwave on macOS
 private func setupTUISQLiteConnection(dbName: String) -> Connection? {
-    let logger = TUILogger(subsystem: subsystem, category: "setupTUISQLiteConnection")
+    let logger = createLogger(subsystem: subsystem, category: "setupTUISQLiteConnection")
     logger.debug("Setting up TUI database connection...")
 
     // Get the appropriate data directory

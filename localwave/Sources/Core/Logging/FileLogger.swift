@@ -173,3 +173,24 @@ public struct TUILogger: AppLogger {
         FileLogger.shared.log("[\(subsystem)][\(category)] \(message)", level: "FAULT")
     }
 }
+
+// MARK: - Platform-Agnostic Logger Factory
+
+/// Global flag to determine logger type (set by main app)
+private var _useTUILogger = false
+
+/// Configure logging mode for the application
+/// - Parameter useTUILogger: true for file-based logging (TUI), false for console logging (iOS)
+public func configureLogging(useTUILogger: Bool) {
+    _useTUILogger = useTUILogger
+}
+
+/// Creates a platform-appropriate logger
+/// - Returns: TUILogger for TUI apps, IOSLogger for iOS apps
+public func createLogger(subsystem: String, category: String) -> AppLogger {
+    if _useTUILogger {
+        return TUILogger(subsystem: subsystem, category: category)
+    } else {
+        return IOSLogger(subsystem: subsystem, category: category)
+    }
+}

@@ -6,7 +6,7 @@ import LocalWaveCore
 
 public actor BackgroundFileService {
     private let songRepo: SongRepository
-    private let logger = Logger(subsystem: subsystem, category: "BackgroundFileService")
+    private let logger = createLogger(subsystem: subsystem, category: "BackgroundFileService")
     private var isRunning = false
     private let maxRetries = 3
 

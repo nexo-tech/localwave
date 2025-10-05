@@ -5,7 +5,7 @@ import LocalWaveCore
 import os
 
 public class DefaultUserService: UserService {
-    let logger = Logger(subsystem: subsystem, category: "UserService")
+    let logger = createLogger(subsystem: subsystem, category: "UserService")
     private var userRepository: UserRepository
 
     public func getOrCreateUser(icloudId: Int64) async throws -> User {

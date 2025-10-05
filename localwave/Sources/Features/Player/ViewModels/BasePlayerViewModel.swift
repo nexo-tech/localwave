@@ -78,8 +78,8 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
         self.playlistRepo = playlistRepo
         self.playlistSongRepo = playlistSongRepo
 
-        // Use provided logger or default to iOS logger
-        self.logger = logger ?? IOSLogger(subsystem: subsystem, category: "BasePlayerViewModel")
+        // Use provided logger or create platform-appropriate logger
+        self.logger = logger ?? createLogger(subsystem: subsystem, category: "BasePlayerViewModel")
 
         self.player.delegate = self
 

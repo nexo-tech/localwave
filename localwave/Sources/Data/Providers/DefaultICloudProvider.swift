@@ -5,7 +5,7 @@ import os
 import SQLite
 
 public class DefaultICloudProvider: ICloudProvider {
-    let logger = Logger(subsystem: subsystem, category: "ICloudProvider")
+    let logger = createLogger(subsystem: subsystem, category: "ICloudProvider")
 
     public init() {}
 
