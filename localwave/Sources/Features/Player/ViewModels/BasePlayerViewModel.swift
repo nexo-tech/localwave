@@ -421,8 +421,10 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
         let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
         timer.schedule(deadline: .now(), repeating: 1.0)
         timer.setEventHandler { [weak self] in
-            Task { @MainActor [weak self] in
-                self?.updateTimeDisplay()
+            // Already on main queue, just need @MainActor context
+            guard let self = self else { return }
+            Task { @MainActor in
+                await self.updateTimeDisplayAsync()
             }
         }
         timer.resume()
@@ -438,14 +440,18 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
         timer = nil
     }
 
+    internal func updateTimeDisplayAsync() async {
+        let currentTimeValue = player.currentTime
+        let durationValue = player.duration
+
+        playbackProgress = durationValue > 0 ? currentTimeValue / durationValue : 0
+        currentTime = formatTime(currentTimeValue)
+        duration = formatTime(durationValue)
+    }
+
     internal func updateTimeDisplay() {
         let currentTimeValue = player.currentTime
         let durationValue = player.duration
-        let isPlayingValue = player.isPlaying
-
-        // Debug to stderr for TUI
-        fputs("DEBUG: updateTimeDisplay - currentTime: \(currentTimeValue), duration: \(durationValue), isPlaying: \(isPlayingValue)\n", stderr)
-        logger.debug("updateTimeDisplay - currentTime: \(currentTimeValue), duration: \(durationValue), isPlaying: \(isPlayingValue)")
 
         playbackProgress = durationValue > 0 ? currentTimeValue / durationValue : 0
         currentTime = formatTime(currentTimeValue)
