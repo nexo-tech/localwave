@@ -5,12 +5,12 @@
 //  Created by Claude Code on 04.10.2025.
 //
 
-#if canImport(AVFoundation) && canImport(UIKit)
+#if canImport(AVFoundation)
 import AVFoundation
 import Foundation
 import os
 
-/// iOS implementation of AudioPlayerProtocol using AVAudioPlayer
+/// AVAudioPlayer implementation of AudioPlayerProtocol (iOS and macOS)
 @MainActor
 public class AVAudioPlayerAdapter: NSObject, AudioPlayerProtocol, @preconcurrency AVAudioPlayerDelegate {
     private var player: AVAudioPlayer?
@@ -126,6 +126,8 @@ public class AVAudioPlayerAdapter: NSObject, AudioPlayerProtocol, @preconcurrenc
     // MARK: - Audio Session Setup
 
     private func setupAudioSession() {
+        #if canImport(UIKit)
+        // iOS requires audio session configuration
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
             try AVAudioSession.sharedInstance().setActive(true)
@@ -133,6 +135,10 @@ public class AVAudioPlayerAdapter: NSObject, AudioPlayerProtocol, @preconcurrenc
         } catch {
             logger.error("Audio session setup error: \(error)")
         }
+        #else
+        // macOS doesn't need audio session setup
+        logger.debug("macOS - no audio session setup needed")
+        #endif
     }
 }
 #endif
