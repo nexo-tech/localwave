@@ -33,15 +33,16 @@
    </TestAction>
    <LaunchAction
       buildConfiguration = "Debug"
-      selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
-      selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
+      selectedDebuggerIdentifier = ""
+      selectedLauncherIdentifier = "Xcode.IDEFoundation.Launcher.PosixSpawn"
       launchStyle = "0"
       useCustomWorkingDirectory = "NO"
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
       allowLocationSimulation = "YES"
-      launchAutomaticallySubstyle = "2">
+      consoleMode = "0"
+      launchAutomaticallySubstyle = "0">
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
@@ -52,24 +53,6 @@
             ReferencedContainer = "container:">
          </BuildableReference>
       </BuildableProductRunnable>
-      <PreActions>
-         <ExecutionAction
-            ActionType = "Xcode.IDEStandardExecutionActionsCore.ExecutionActionType.ShellScriptAction">
-            <ActionContent
-               title = "Launch in Terminal"
-               scriptText = "osascript -e &apos;tell application &quot;Terminal&quot; to do script &quot;&apos;&quot;$BUILT_PRODUCTS_DIR/$EXECUTABLE_PATH&quot;&apos;&quot;&apos;">
-               <EnvironmentBuildable>
-                  <BuildableReference
-                     BuildableIdentifier = "primary"
-                     BlueprintIdentifier = "localwave-tui"
-                     BuildableName = "localwave-tui"
-                     BlueprintName = "localwave-tui"
-                     ReferencedContainer = "container:">
-                  </BuildableReference>
-               </EnvironmentBuildable>
-            </ActionContent>
-         </ExecutionAction>
-      </PreActions>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

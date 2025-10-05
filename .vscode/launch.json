@@ -10,7 +10,7 @@
             "cwd": "${workspaceFolder}",
             "preLaunchTask": "swift-build-tui",
             "terminal": "integrated",
-            "console": "integratedTerminal",
+            "console": "internalConsole",
             "env": {
                 "TERM": "xterm-256color"
             }

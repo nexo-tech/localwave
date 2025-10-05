@@ -6,7 +6,6 @@
 //
 
 import Foundation
-import os
 import SQLite
 import LocalWaveDomain
 import LocalWaveCore
@@ -34,7 +33,7 @@ class TUIDependencyContainer {
 
     private var backgroundFileService: BackgroundFileService?
 
-    let logger = Logger(subsystem: subsystem, category: "TUIDependencyContainer")
+    let logger = TUILogger(subsystem: subsystem, category: "TUIDependencyContainer")
 
     // MARK: - Initialization
 
@@ -147,7 +146,7 @@ class TUIDependencyContainer {
 /// Uses XDG Base Directory specification: ~/.local/share/localwave
 /// Falls back to ~/Library/Application Support/localwave on macOS
 private func setupTUISQLiteConnection(dbName: String) -> Connection? {
-    let logger = Logger(subsystem: subsystem, category: "setupTUISQLiteConnection")
+    let logger = TUILogger(subsystem: subsystem, category: "setupTUISQLiteConnection")
     logger.debug("Setting up TUI database connection...")
 
     // Get the appropriate data directory
