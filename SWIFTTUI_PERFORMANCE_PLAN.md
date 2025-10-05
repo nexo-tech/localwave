@@ -20,7 +20,7 @@
 - [ ] **Phase 3: Layer & Cell Lookup Optimization** (Expected: 40-60% improvement)
   - [x] Task 3.1: Add spatial indexing (8x8 grid) for layer hierarchy
   - [x] Task 3.2: Implement cell caching at layer level
-  - [ ] Task 3.3: Add occlusion culling for overlapping layers
+  - [x] Task 3.3: Add occlusion culling for overlapping layers
   - [ ] Task 3.4: Implement dirty rectangle merging
 
 - [ ] **Phase 4: State Management & Update Batching** (Expected: 30-50% improvement)

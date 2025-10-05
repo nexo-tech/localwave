@@ -273,7 +273,7 @@ struct TUIClassicLayout: View {
                 Text("  ")
             }
         }
-        .background(theme.surface0)
+        .background(theme.base)
     }
 
     private var progressBar: some View {
@@ -430,6 +430,7 @@ struct TUIClassicLayout: View {
             }
             .foregroundColor(theme.text)
         }
+        .background(theme.base)
     }
 
     // MARK: - Helpers
