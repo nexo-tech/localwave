@@ -56,6 +56,7 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
     internal let player: AudioPlayerProtocol
 
     internal var timer: Timer?
+    internal var dispatchTimer: DispatchSourceTimer?
     internal var songs: [Song] = []
     internal var currentIndex: Int = 0
     internal var activeSecurityScopedURLs = [URL]()
@@ -416,26 +417,39 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
     }
 
     internal func startTimer() {
-        timer = Timer.scheduledTimer(
-            withTimeInterval: 1.0,
-            repeats: true
-        ) { [weak self] _ in
+        // Use DispatchSourceTimer instead of RunLoop Timer for TUI compatibility
+        let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
+        timer.schedule(deadline: .now(), repeating: 1.0)
+        timer.setEventHandler { [weak self] in
             Task { @MainActor [weak self] in
                 self?.updateTimeDisplay()
             }
         }
-        RunLoop.main.add(timer!, forMode: .common)
+        timer.resume()
+        dispatchTimer = timer
+
+        logger.debug("DispatchTimer started for time display updates")
     }
 
     internal func stopTimer() {
+        dispatchTimer?.cancel()
+        dispatchTimer = nil
         timer?.invalidate()
         timer = nil
     }
 
     internal func updateTimeDisplay() {
-        playbackProgress = player.currentTime / player.duration
-        currentTime = formatTime(player.currentTime)
-        duration = formatTime(player.duration)
+        let currentTimeValue = player.currentTime
+        let durationValue = player.duration
+        let isPlayingValue = player.isPlaying
+
+        // Debug to stderr for TUI
+        fputs("DEBUG: updateTimeDisplay - currentTime: \(currentTimeValue), duration: \(durationValue), isPlaying: \(isPlayingValue)\n", stderr)
+        logger.debug("updateTimeDisplay - currentTime: \(currentTimeValue), duration: \(durationValue), isPlaying: \(isPlayingValue)")
+
+        playbackProgress = durationValue > 0 ? currentTimeValue / durationValue : 0
+        currentTime = formatTime(currentTimeValue)
+        duration = formatTime(durationValue)
     }
 
     internal func formatTime(_ time: TimeInterval) -> String {
