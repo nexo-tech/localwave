@@ -64,6 +64,27 @@ Run tasks via **⇧⌘B** or Command Palette (⇧⌘P):
 - Build output appears in the Terminal panel
 - LLDB console is available in the Debug Console panel
 
+## Language Server (Autocomplete & Navigation)
+
+This project uses **SourceKit-LSP** (not xcode-build-server) for Swift language support.
+
+### If autocomplete/go-to-definition stops working:
+
+1. Run the regeneration script:
+   ```bash
+   ./regenerate-lsp.sh
+   ```
+
+2. Restart VSCode (⌘Q, then reopen)
+
+### Manual regeneration:
+```bash
+rm -rf .build .swiftpm/xcode
+swift build --build-tests
+```
+
+Then reload VSCode window: ⇧⌘P → "Developer: Reload Window"
+
 ## Troubleshooting
 
 **Problem**: "CodeLLDB is not available"
@@ -74,3 +95,9 @@ Run tasks via **⇧⌘B** or Command Palette (⇧⌘P):
 
 **Problem**: Breakpoints not working
 **Solution**: Make sure you're using "Debug TUI", not "Run TUI (No Debug)"
+
+**Problem**: Autocomplete not working / "Cannot find type in scope"
+**Solution**: Run `./regenerate-lsp.sh` and restart VSCode
+
+**Problem**: xcode-build-server errors
+**Solution**: Ignore them - this project uses Swift Package Manager with SourceKit-LSP, not xcode-build-server
