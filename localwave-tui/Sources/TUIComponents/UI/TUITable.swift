@@ -108,7 +108,12 @@ public struct TUITable<Item>: View {
             let visibleEnd = min(state.scrollOffset + state.effectiveVisibleHeight, items.count)
 
             // Only render if we have a valid range
-            if visibleStart < visibleEnd {
+            // ULTRA-DEFENSIVE: Verify all bounds before creating ForEach Range
+            if visibleStart >= 0 &&
+               visibleStart < items.count &&
+               visibleEnd > 0 &&
+               visibleEnd <= items.count &&
+               visibleStart < visibleEnd {
                 ForEach(visibleStart..<visibleEnd, id: \.self) { index in
                     let item = items[index]
                     let isSelected = index == state.selectedIndex

@@ -347,14 +347,23 @@ struct TUIClassicLayout: View {
 
             // Songs - use calculated height directly with bounds checking
             // Only render if we have items to show
-            if !mockSongs.isEmpty {
-                // Clamp scrollOffset to valid range [0, count)
-                let clampedOffset = max(0, min(songListState.scrollOffset, mockSongs.count - 1))
-                let visibleStart = clampedOffset
-                let visibleEnd = min(clampedOffset + calculatedHeight, mockSongs.count)
+            if !mockSongs.isEmpty && calculatedHeight > 0 {
+                // ULTRA-DEFENSIVE: Ensure all values are valid before creating Range
+                let safeScrollOffset = max(0, min(songListState.scrollOffset, mockSongs.count - 1))
+                let safeHeight = max(1, calculatedHeight)
+                let safeCount = mockSongs.count
 
-                // Double-check range is valid before ForEach
-                if visibleStart >= 0 && visibleEnd <= mockSongs.count && visibleStart < visibleEnd {
+                // Calculate range bounds with overflow protection
+                let rawEnd = safeScrollOffset + safeHeight
+                let visibleStart = safeScrollOffset
+                let visibleEnd = min(rawEnd, safeCount)
+
+                // Triple-check range validity before creating ForEach
+                if visibleStart >= 0 &&
+                   visibleStart < safeCount &&
+                   visibleEnd > 0 &&
+                   visibleEnd <= safeCount &&
+                   visibleStart < visibleEnd {
                     ForEach(visibleStart..<visibleEnd, id: \.self) { index in
                         songRow(
                             song: mockSongs[index],

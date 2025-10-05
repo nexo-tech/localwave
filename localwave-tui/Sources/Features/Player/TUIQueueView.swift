@@ -122,7 +122,12 @@ struct TUIQueueView: View {
             }
 
             // Queue items - only render if we have a valid range
-            if visibleStart < visibleEnd {
+            // ULTRA-DEFENSIVE: Verify all bounds before creating ForEach Range
+            if visibleStart >= 0 &&
+               visibleStart < queue.count &&
+               visibleEnd > 0 &&
+               visibleEnd <= queue.count &&
+               visibleStart < visibleEnd {
                 ForEach(visibleStart..<visibleEnd, id: \.self) { globalIndex in
                     let song = queue[globalIndex]
                     let isSelected = globalIndex == listState.selectedIndex
