@@ -141,7 +141,7 @@ public struct TUITable<Item>: View {
     }
 
     private func alignText(_ text: String, width: Int, alignment: TUITableAlignment) -> String {
-        guard width > 0 else { return "" }
+        guard width > 0 else { return " " }
         let truncated = text.count > width ? String(text.prefix(max(0, width - 1))) + "…" : text
         let padding = max(0, width - truncated.count)
 
@@ -189,7 +189,7 @@ public struct TUIKeyValueTable: View {
     }
 
     private func padRight(_ text: String, width: Int) -> String {
-        guard width > 0 else { return "" }
+        guard width > 0 else { return " " }
         let truncated = text.count > width ? String(text.prefix(max(0, width - 1))) + "…" : text
         let padding = max(0, width - truncated.count)
         return truncated + String(repeating: " ", count: padding)
