@@ -96,13 +96,22 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
             return
         }
 
+        // If already playing, do nothing
+        if isPlaying, let existingProcess = process, existingProcess.isRunning {
+            logger.debug("Already playing, ignoring play() call")
+            return
+        }
+
+        // Check if we're resuming from pause
+        let isResuming = pausedTime > 0
+
         // Stop any existing playback
         if let existingProcess = process, existingProcess.isRunning {
             existingProcess.terminate()
             // Don't wait for termination - continue immediately
         }
 
-        logger.debug("Starting playback with afplay")
+        logger.debug("Starting playback with afplay (resuming: \(isResuming))")
 
         let task = Process()
         task.executableURL = URL(fileURLWithPath: "/usr/bin/afplay")
@@ -139,10 +148,15 @@ public class CLIAudioPlayerAdapter: AudioPlayerProtocol {
             process = task
             currentPlayingProcess = task  // Mark this as the process that should trigger delegate
             isPlaying = true
-            pausedTime = 0  // Reset paused time for fresh playback
+
+            // Only reset pausedTime if this is NOT a resume
+            if !isResuming {
+                pausedTime = 0
+            }
+
             startTime = Date()
             startPlaybackTimer()
-            logger.debug("Playback started, startTime: \(self.startTime!)")
+            logger.debug("Playback started, startTime: \(self.startTime!), pausedTime: \(self.pausedTime)")
         } catch {
             logger.error("Failed to start afplay: \(error)")
         }
