@@ -288,8 +288,8 @@ struct TUIClassicLayout: View {
     private var progressBar: some View {
         let totalWidth = 40
         let progress = currentTime / totalTime
-        let filledWidth = Int(Double(totalWidth) * progress)
-        let emptyWidth = totalWidth - filledWidth
+        let filledWidth = max(0, min(totalWidth, Int(Double(totalWidth) * progress)))
+        let emptyWidth = max(0, totalWidth - filledWidth)
 
         return HStack(spacing: 0) {
             Text(String(repeating: "━", count: filledWidth))
