@@ -159,12 +159,21 @@ struct TUIClassicLayout: View {
         let visibleHeight = max(5, dependencies.terminalSizeTracker.height - 10)
         let pageSize = visibleHeight / 2  // Half page down
         let newIndex = min(songListState.selectedIndex + pageSize, mockSongs.count - 1)
+
+        print("DEBUG Ctrl+D: visibleHeight=\(visibleHeight), pageSize=\(pageSize)")
+        print("DEBUG Ctrl+D: oldIndex=\(songListState.selectedIndex), newIndex=\(newIndex)")
+        print("DEBUG Ctrl+D: oldScrollOffset=\(songListState.scrollOffset)")
+
         songListState.selectedIndex = newIndex
 
         // Auto-scroll if selection goes below visible area
         if newIndex >= songListState.scrollOffset + visibleHeight {
-            songListState.scrollOffset = max(0, min(newIndex - visibleHeight + 1, mockSongs.count - visibleHeight))
+            let newScrollOffset = max(0, min(newIndex - visibleHeight + 1, mockSongs.count - visibleHeight))
+            print("DEBUG Ctrl+D: newScrollOffset=\(newScrollOffset)")
+            songListState.scrollOffset = newScrollOffset
         }
+
+        print("DEBUG Ctrl+D: done - scrollOffset=\(songListState.scrollOffset)")
     }
 
     private func handleCtrlU() {
@@ -358,12 +367,22 @@ struct TUIClassicLayout: View {
                 let visibleStart = safeScrollOffset
                 let visibleEnd = min(rawEnd, safeCount)
 
+                // Debug logging
+                let _ = {
+                    print("DEBUG render: scrollOffset=\(songListState.scrollOffset), calculatedHeight=\(calculatedHeight)")
+                    print("DEBUG render: visibleStart=\(visibleStart), visibleEnd=\(visibleEnd), count=\(safeCount)")
+                }()
+
                 // Triple-check range validity before creating ForEach
-                if visibleStart >= 0 &&
+                let rangeValid = visibleStart >= 0 &&
                    visibleStart < safeCount &&
                    visibleEnd > 0 &&
                    visibleEnd <= safeCount &&
-                   visibleStart < visibleEnd {
+                   visibleStart < visibleEnd
+
+                let _ = rangeValid ? print("DEBUG render: creating ForEach(\(visibleStart)..<\(visibleEnd))") : print("ERROR: Range validation FAILED!")
+
+                if rangeValid {
                     ForEach(visibleStart..<visibleEnd, id: \.self) { index in
                         songRow(
                             song: mockSongs[index],
@@ -373,6 +392,8 @@ struct TUIClassicLayout: View {
                             artistWidth: artistWidth
                         )
                     }
+                } else {
+                    Text("ERROR: Invalid range - skipping render")
                 }
             }
 
