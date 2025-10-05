@@ -209,12 +209,14 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
     }
 
     public func play() {
+        logger.debug("BasePlayerViewModel.play() called, current isPlaying: \(self.isPlaying)")
         player.play()
         isPlaying = true
         startTimer()
     }
 
     public func pause() {
+        logger.debug("BasePlayerViewModel.pause() called, current isPlaying: \(self.isPlaying)")
         player.pause()
         isPlaying = false
         stopTimer()

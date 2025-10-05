@@ -75,8 +75,9 @@ public class AVAudioPlayerAdapter: NSObject, AudioPlayerProtocol, @preconcurrenc
             return
         }
 
+        let currentTime = player.currentTime
         player.play()
-        logger.debug("Playback started")
+        logger.debug("Playback started, currentTime: \(currentTime), isPlaying: \(player.isPlaying)")
     }
 
     public func pause() {
@@ -91,7 +92,7 @@ public class AVAudioPlayerAdapter: NSObject, AudioPlayerProtocol, @preconcurrenc
 
     public func stop() {
         guard let player = player else {
-            logger.warning("Attempted to stop but player is nil")
+            // No player to stop, this is fine
             return
         }
 
