@@ -93,12 +93,14 @@ class TUIDependencyContainer {
 
         // Initialize player view model with AVAudioPlayer (proper macOS audio support)
         let audioPlayer = AVAudioPlayerAdapter()
+        let playerLogger = TUILogger(subsystem: subsystem, category: "BasePlayerViewModel")
         playerViewModel = BasePlayerViewModel(
             player: audioPlayer,
             playerPersistenceService: playerPersistenceService,
             songRepo: songRepo,
             playlistRepo: playlistRepo,
-            playlistSongRepo: playlistSongRepo
+            playlistSongRepo: playlistSongRepo,
+            logger: playerLogger
         )
 
         logger.info("TUI DependencyContainer initialized successfully")

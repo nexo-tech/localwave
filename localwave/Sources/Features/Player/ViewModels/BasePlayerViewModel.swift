@@ -7,7 +7,6 @@
 
 import Combine
 import Foundation
-import os
 import LocalWaveDomain
 import LocalWaveCore
 import LocalWaveData
@@ -61,7 +60,7 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
     internal var currentIndex: Int = 0
     internal var activeSecurityScopedURLs = [URL]()
 
-    internal let logger = Logger(subsystem: subsystem, category: "BasePlayerViewModel")
+    internal let logger: AppLogger
 
     // MARK: - Initialization
 
@@ -70,13 +69,17 @@ public class BasePlayerViewModel: ObservableObject, AudioPlayerDelegate {
         playerPersistenceService: PlayerPersistenceService? = nil,
         songRepo: SongRepository? = nil,
         playlistRepo: PlaylistRepository,
-        playlistSongRepo: PlaylistSongRepository
+        playlistSongRepo: PlaylistSongRepository,
+        logger: AppLogger? = nil
     ) {
         self.player = player
         self.playerPersistenceService = playerPersistenceService
         self.songRepo = songRepo
         self.playlistRepo = playlistRepo
         self.playlistSongRepo = playlistSongRepo
+
+        // Use provided logger or default to iOS logger
+        self.logger = logger ?? IOSLogger(subsystem: subsystem, category: "BasePlayerViewModel")
 
         self.player.delegate = self
 

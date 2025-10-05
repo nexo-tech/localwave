@@ -8,8 +8,52 @@
 import Foundation
 import os
 
-/// File-based logger for TUI applications
-/// Redirects all os.Logger output to a file to avoid breaking TUI display
+// MARK: - Logger Protocol
+
+/// Universal logging protocol that works across iOS and TUI
+public protocol AppLogger {
+    func debug(_ message: String)
+    func info(_ message: String)
+    func warning(_ message: String)
+    func error(_ message: String)
+    func fault(_ message: String)
+}
+
+// MARK: - iOS Logger (os.Logger wrapper)
+
+/// iOS logger that wraps os.Logger for console output
+public struct IOSLogger: AppLogger {
+    private let logger: Logger
+
+    public init(subsystem: String, category: String) {
+        self.logger = Logger(subsystem: subsystem, category: category)
+    }
+
+    public func debug(_ message: String) {
+        logger.debug("\(message)")
+    }
+
+    public func info(_ message: String) {
+        logger.info("\(message)")
+    }
+
+    public func warning(_ message: String) {
+        logger.warning("\(message)")
+    }
+
+    public func error(_ message: String) {
+        logger.error("\(message)")
+    }
+
+    public func fault(_ message: String) {
+        logger.fault("\(message)")
+    }
+}
+
+// MARK: - File Logger Backend
+
+/// File-based logger backend for TUI applications
+/// Redirects all log output to a file to avoid breaking TUI display
 public class FileLogger {
     public static let shared = FileLogger()
 
@@ -97,8 +141,10 @@ private struct StandardError: TextOutputStream {
 
 private var standardError = StandardError()
 
-/// Custom logger that writes to file instead of stdout
-public struct TUILogger {
+// MARK: - TUI Logger (File-based)
+
+/// TUI logger that writes to file instead of stdout
+public struct TUILogger: AppLogger {
     private let subsystem: String
     private let category: String
 
