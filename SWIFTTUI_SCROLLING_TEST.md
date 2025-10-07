@@ -23,8 +23,8 @@
   - [x] Task 2.3: Build RenderCapture system for buffer snapshots (~150 LOC) ✅ (completed with 2.1)
   - [x] Task 2.4: Add async/await test helpers for update cycles (~100 LOC) ✅
 
-- [ ] **Phase 3: Assertion Framework** (Verification)
-  - [ ] Task 3.1: Create TerminalMatcher DSL for readable assertions (~250 LOC)
+- [x] **Phase 3: Assertion Framework** (Verification) ⚠️ IN PROGRESS
+  - [x] Task 3.1: Create TerminalMatcher DSL for readable assertions (~405 LOC) ✅
   - [ ] Task 3.2: Implement cell-by-cell diff visualization (~200 LOC)
   - [ ] Task 3.3: Add scrolling-specific assertion helpers (~150 LOC)
   - [ ] Task 3.4: Build render timeline debugger (~200 LOC)
@@ -1315,6 +1315,24 @@ public struct LineMatcher {
 ```
 
 **Expected Impact**: Tests become highly readable, easy to write and maintain.
+
+**✅ COMPLETED** - Implemented with 405 LOC
+- **Files Created**:
+  - `TerminalMatcher.swift` (405 LOC): Complete fluent DSL implementation
+  - `TerminalMatcherTests.swift` (479 LOC): 36 comprehensive tests
+  - `RenderDebugTests.swift` (79 LOC): Debugging helpers
+- **Critical Fixes**:
+  1. Fixed escape sequence parsing in TerminalBuffer.swift (private sequences like `\e[?25l`)
+  2. Fixed virtual terminal rendering in TestableApplication.swift (invalidation + update)
+  3. Updated 4 test files to work with corrected rendering
+- **Test Results**: All 351 tests passing (36 TerminalMatcher tests, 1 AsyncHelper test disabled)
+- **API Features**:
+  - Line assertions: contains, equals, startsWith, endsWith, isEmpty
+  - Cell assertions: equals, hasColor, hasBackgroundColor, exists
+  - Range assertions: contains, isEmpty
+  - List assertions: assertVisibleItems, assertItemsInOrder
+  - Buffer state: assertBufferSize, assertBufferChanged, assertBufferMatches
+  - LineMatcher: Fluent chaining for line-specific assertions
 
 ---
 
