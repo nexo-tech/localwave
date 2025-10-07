@@ -25,7 +25,7 @@
 
 - [x] **Phase 3: Assertion Framework** (Verification) ⚠️ IN PROGRESS
   - [x] Task 3.1: Create TerminalMatcher DSL for readable assertions (~405 LOC) ✅
-  - [ ] Task 3.2: Implement cell-by-cell diff visualization (~200 LOC)
+  - [x] Task 3.2: Implement cell-by-cell diff visualization (~240 LOC) ✅
   - [ ] Task 3.3: Add scrolling-specific assertion helpers (~150 LOC)
   - [ ] Task 3.4: Build render timeline debugger (~200 LOC)
 
@@ -1449,6 +1449,26 @@ extension Array {
 ```
 
 **Expected Impact**: Dramatically speeds up debugging when tests fail.
+
+**✅ COMPLETED** - Implemented with 240 LOC
+- **Files Created**:
+  - `BufferVisualizer.swift` (240 LOC): Complete diff visualization implementation
+  - `BufferVisualizerTests.swift` (321 LOC): 21 comprehensive tests
+- **Implementation Details**:
+  1. `BufferDiff` struct: Tracks changed cells between two snapshots
+  2. `visualizeDiff()`: Side-by-side diff with change markers
+  3. `visualizeRaw()`: Raw buffer view with visible whitespace
+  4. `visualizeWithColors()`: Shows color attributes for debugging
+  5. `visualize()`: Basic buffer visualization with line numbers
+  6. `visualizeSideBySide()`: Horizontal comparison view
+  7. `visualizeChangesWithContext()`: Shows changes with surrounding context
+- **Test Results**: All 374 tests passing
+- **API Features**:
+  - Cell-by-cell comparison with position tracking
+  - Multiple visualization modes for different debugging needs
+  - Context-aware change display
+  - Performance-optimized for large buffers
+  - Safe array subscripting to handle edge cases
 
 ---
 
