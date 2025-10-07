@@ -19,8 +19,8 @@
 
 - [ ] **Phase 2: Test Application Infrastructure** (Test Harness)
   - [x] Task 2.1: Create TestableApplication with injectable dependencies (~250 LOC) ✅
-  - [ ] Task 2.2: Implement KeyEventSimulator for input injection (~200 LOC) (completed with 2.1)
-  - [ ] Task 2.3: Build RenderCapture system for buffer snapshots (~150 LOC) (completed with 2.1)
+  - [x] Task 2.2: Implement KeyEventSimulator for input injection (~200 LOC) ✅
+  - [x] Task 2.3: Build RenderCapture system for buffer snapshots (~150 LOC) ✅ (completed with 2.1)
   - [ ] Task 2.4: Add async/await test helpers for update cycles (~100 LOC)
 
 - [ ] **Phase 3: Assertion Framework** (Verification)
