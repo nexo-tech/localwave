@@ -160,14 +160,11 @@ struct TUIClassicLayout: View {
         let pageSize = visibleHeight / 2  // Half page down
         let newIndex = min(songListState.selectedIndex + pageSize, mockSongs.count - 1)
 
-        print("handleCtrlD: oldIndex=\(songListState.selectedIndex), newIndex=\(newIndex), scrollOffset=\(songListState.scrollOffset), visibleHeight=\(visibleHeight)")
-
         songListState.selectedIndex = newIndex
 
         // Auto-scroll if selection goes below visible area
         if newIndex >= songListState.scrollOffset + visibleHeight {
             let newScrollOffset = max(0, min(newIndex - visibleHeight + 1, mockSongs.count - visibleHeight))
-            print("handleCtrlD: SCROLLING! old=\(songListState.scrollOffset), new=\(newScrollOffset)")
             songListState.scrollOffset = newScrollOffset
         }
     }
@@ -363,8 +360,6 @@ struct TUIClassicLayout: View {
                 let visibleStart = safeScrollOffset
                 let visibleEnd = min(rawEnd, safeCount)
 
-                let _ = print("RENDER: scrollOffset=\(songListState.scrollOffset), visibleStart=\(visibleStart), visibleEnd=\(visibleEnd)")
-
                 // Triple-check range validity before creating ForEach
                 let rangeValid = visibleStart >= 0 &&
                    visibleStart < safeCount &&
@@ -373,16 +368,11 @@ struct TUIClassicLayout: View {
                    visibleStart < visibleEnd
 
                 if rangeValid {
-                    // Map indices to include both scrollOffset and index for unique IDs
-                    // This forces ForEach to rebuild when scrollOffset changes
-                    let items = (visibleStart..<visibleEnd).map { index in
-                        (id: "\(songListState.scrollOffset)-\(index)", index: index)
-                    }
-                    ForEach(items, id: \.id) { item in
+                    ForEach(visibleStart..<visibleEnd, id: \.self) { index in
                         songRow(
-                            song: mockSongs[item.index],
-                            index: item.index,
-                            isSelected: item.index == songListState.selectedIndex,
+                            song: mockSongs[index],
+                            index: index,
+                            isSelected: index == songListState.selectedIndex,
                             titleWidth: titleWidth,
                             artistWidth: artistWidth
                         )
