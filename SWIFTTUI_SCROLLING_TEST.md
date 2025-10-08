@@ -29,13 +29,13 @@
   - [x] Task 3.3: Add scrolling-specific assertion helpers (~310 LOC) ✅
   - [x] Task 3.4: Build render timeline debugger (~335 LOC) ✅
 
-- [ ] **Phase 4: Scrolling Test Suite** (Actual Tests) ⚠️ IN PROGRESS
+- [x] **Phase 4: Scrolling Test Suite** (Actual Tests) ✅
   - [x] Task 4.1: Test basic j/k navigation with 10 items (~390 LOC) ✅
   - [x] Task 4.2: Test Ctrl+D/Ctrl+U half-page scrolling (~430 LOC) ✅
   - [x] Task 4.3: Test viewport boundaries and edge cases (~440 LOC) ✅
   - [x] Task 4.4: Test list with 100+ items for performance (~460 LOC) ✅
   - [x] Task 4.5: Test ForEach identity-based diffing behavior (~450 LOC) ✅
-  - [ ] Task 4.6: Test zero-sized rect invalidation edge cases (~150 LOC)
+  - [x] Task 4.6: Test zero-sized rect invalidation edge cases (~520 LOC) ✅
 
 ---
 
