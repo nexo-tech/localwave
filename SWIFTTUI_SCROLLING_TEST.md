@@ -23,18 +23,18 @@
   - [x] Task 2.3: Build RenderCapture system for buffer snapshots (~150 LOC) ✅ (completed with 2.1)
   - [x] Task 2.4: Add async/await test helpers for update cycles (~100 LOC) ✅
 
-- [x] **Phase 3: Assertion Framework** (Verification) ⚠️ IN PROGRESS
+- [x] **Phase 3: Assertion Framework** (Verification) ✅
   - [x] Task 3.1: Create TerminalMatcher DSL for readable assertions (~405 LOC) ✅
   - [x] Task 3.2: Implement cell-by-cell diff visualization (~240 LOC) ✅
-  - [ ] Task 3.3: Add scrolling-specific assertion helpers (~150 LOC)
-  - [ ] Task 3.4: Build render timeline debugger (~200 LOC)
+  - [x] Task 3.3: Add scrolling-specific assertion helpers (~310 LOC) ✅
+  - [x] Task 3.4: Build render timeline debugger (~335 LOC) ✅
 
-- [ ] **Phase 4: Scrolling Test Suite** (Actual Tests)
-  - [ ] Task 4.1: Test basic j/k navigation with 10 items (~150 LOC)
-  - [ ] Task 4.2: Test Ctrl+D/Ctrl+U half-page scrolling (~200 LOC)
-  - [ ] Task 4.3: Test viewport boundaries and edge cases (~200 LOC)
-  - [ ] Task 4.4: Test list with 100+ items for performance (~150 LOC)
-  - [ ] Task 4.5: Test ForEach identity-based diffing behavior (~250 LOC)
+- [ ] **Phase 4: Scrolling Test Suite** (Actual Tests) ⚠️ IN PROGRESS
+  - [x] Task 4.1: Test basic j/k navigation with 10 items (~390 LOC) ✅
+  - [x] Task 4.2: Test Ctrl+D/Ctrl+U half-page scrolling (~430 LOC) ✅
+  - [x] Task 4.3: Test viewport boundaries and edge cases (~440 LOC) ✅
+  - [x] Task 4.4: Test list with 100+ items for performance (~460 LOC) ✅
+  - [x] Task 4.5: Test ForEach identity-based diffing behavior (~450 LOC) ✅
   - [ ] Task 4.6: Test zero-sized rect invalidation edge cases (~150 LOC)
 
 ---
