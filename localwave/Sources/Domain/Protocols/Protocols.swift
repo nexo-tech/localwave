@@ -1,7 +1,7 @@
 import Foundation
 
 protocol PlayerPersistenceService {
-    func getVolume() async -> Float
+    func getVolume() async -> Float?
     func restore() async -> ([Song], Int, Song?)?
     func savePlaybackState(volume: Float, currentIndex: Int, songs: [Song]) async
 }

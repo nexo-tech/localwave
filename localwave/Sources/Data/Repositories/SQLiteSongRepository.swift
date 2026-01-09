@@ -134,7 +134,7 @@ actor SQLiteSongRepository: SongRepository {
 
     func getSongs(ids: [Int64]) async -> [Song] {
         let query = songsTable.filter(ids.contains(colId))
-        return try! db.prepare(query).map { row in
+        let songs = try! db.prepare(query).map { row in
             Song(
                 id: row[colId],
                 songKey: row[colSongKey],
@@ -156,6 +156,15 @@ actor SQLiteSongRepository: SongRepository {
                 isFavorite: row[colIsFavorite] // NEWER
             )
         }
+        
+        // Create a dictionary for O(1) lookup
+        let songDict: [Int64: Song] = Dictionary(uniqueKeysWithValues: songs.compactMap { song in
+            guard let id = song.id else { return nil }
+            return (id, song)
+        })
+        
+        // Return songs in the same order as the input IDs
+        return ids.compactMap { songDict[$0] }
     }
 
     func getSongByURL(_ url: URL) async -> Song? {
